@@ -22,6 +22,12 @@ editable `.drawio` format.
 - Autosaving of the text in `localStorage`.
 - Zoom, panning, and automatic fitting of the diagram.
 - English and Russian interfaces (English by default).
+- Light and dark appearance, with a "follow the system" option.
+- Syntax highlighting in the editor.
+- Automatic bracket pairing: type `{` or `[`, the closing partner is
+  added and the caret stays between them; typing a closer right after
+  its opener just moves the caret.
+- `Tab` / `Shift+Tab` indent and outdent, including whole selections.
 - No server, no build step, no external dependencies.
 
 ## Running
@@ -54,6 +60,19 @@ The language selector lives in the header, next to the export button.
 The default is English; the choice is stored in `localStorage`, along
 with the schema. Switching immediately relays the interface, error
 messages, and diagram labels.
+
+## Appearance
+
+The theme selector next to the language one switches the interface
+between **Light** and **Dark**, or follows the operating system with
+**System** (the default). The choice is remembered and applied before
+the first paint, so there is no flash of the wrong theme. The SVG
+palette of the diagram cards is independent of the theme and stays the
+same in both.
+
+The editor highlights `entity` / `rel` keywords, names, fields, types,
+explicit cardinality, and `#` / `//` comments, and keeps the line
+numbers and the highlighted layer in sync with the text.
 
 ## Syntax
 
@@ -188,7 +207,8 @@ binary content are rejected with a notification.
 - Mouse wheel — zoom.
 - Dragging the background — panning.
 - Double-click on the canvas — fit the diagram.
-- `Tab` in the editor — two spaces.
+- `Tab` in the editor — indent the caret line, or every line of a
+  selection. `Shift+Tab` — the reverse.
 - `Ctrl/Cmd + E` — export `.drawio`.
 - **Save** / **Open** buttons in the editor footer — write the schema
   to a `.erdraft` file and load it from a file.
@@ -215,6 +235,8 @@ src/layout.js       automatic layout
 src/render.js       SVG rendering
 src/drawio.js       .drawio generation
 src/theme.js        diagram palette
+src/highlight.js    editor syntax highlighting
+src/appearance.js   light/dark/system theme
 test/               unit tests
 scripts/            source loader for tests
 ```

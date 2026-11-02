@@ -47,6 +47,7 @@ entity Notification {
 }
 
 const source = document.querySelector('#source');
+const codeHighlight = document.querySelector('#codeHighlight');
 const lineNumbers = document.querySelector('#lineNumbers');
 const statusElement = document.querySelector('#status');
 const statusText = document.querySelector('#statusText');
@@ -57,6 +58,7 @@ const saveStatus = document.querySelector('#saveStatus');
 const exportButton = document.querySelector('#exportButton');
 const helpButton = document.querySelector('#helpButton');
 const syntaxDialog = document.querySelector('#syntaxDialog');
+const syntaxExampleCode = document.querySelector('#syntaxExampleCode');
 const diagram = document.querySelector('#diagram');
 const diagramViewport = document.querySelector('#diagramViewport');
 const canvasEmpty = document.querySelector('#canvasEmpty');
@@ -69,6 +71,7 @@ const zoomOutButton = document.querySelector('#zoomOutButton');
 const fitButton = document.querySelector('#fitButton');
 const toast = document.querySelector('#toast');
 const languageSelect = document.querySelector('#languageSelect');
+const themeSelect = document.querySelector('#themeSelect');
 const saveFileButton = document.querySelector('#saveFileButton');
 const openFileButton = document.querySelector('#openFileButton');
 
@@ -156,7 +159,13 @@ function applyLanguage() {
   for (const element of document.querySelectorAll('[data-i18n-title]')) {
     element.setAttribute('title', I18N.t(element.dataset.i18nTitle));
   }
+  highlightSyntaxExample();
   setSaveStatus(I18N.t('editor.save.initial'), false);
+}
+
+function highlightSyntaxExample() {
+  if (!syntaxExampleCode) return;
+  syntaxExampleCode.innerHTML = highlightSchema(syntaxExampleCode.textContent);
 }
 
 function handleLanguageChange() {
@@ -185,6 +194,14 @@ function setSaveStatus(text, saving) {
   saveStatus.classList.toggle('is-saving', Boolean(saving));
 }
 
+function updateHighlight() {
+  if (!codeHighlight) return;
+  const value = source.value;
+  codeHighlight.innerHTML = highlightSchema(value);
+  codeHighlight.scrollTop = source.scrollTop;
+  codeHighlight.scrollLeft = source.scrollLeft;
+}
+
 function updateGutter() {
   const lineCount = source.value.split('\n').length;
   const digits = String(lineCount).length;
@@ -201,6 +218,7 @@ function updateGutter() {
 
   lineNumbers.replaceChildren(fragment);
   lineNumbers.scrollTop = source.scrollTop;
+  updateHighlight();
 }
 
 function focusLine(lineNumber) {
@@ -218,6 +236,7 @@ function focusLine(lineNumber) {
   const lineHeight = Number.parseFloat(getComputedStyle(source).lineHeight) || 24;
   source.scrollTop = Math.max(0, (targetLine - 4) * lineHeight);
   lineNumbers.scrollTop = source.scrollTop;
+  if (codeHighlight) codeHighlight.scrollTop = source.scrollTop;
 }
 
 function caretLine() {
@@ -660,18 +679,126 @@ function handleExample() {
   showToast(I18N.t('toast.example'));
 }
 
+const BRACKET_PAIRS = new Map([
+  ['{', '}'],
+  ['[', ']'],
+]);
+const BRACKET_OPENERS = new Map([['}', '{'], [']', '[']]);
+const INDENT = '  ';
+
+function handleBracketInput(event) {
+  const opener = event.key;
+  const closer = BRACKET_PAIRS.get(opener);
+  if (!closer) return;
+
+  const value = source.value;
+  const start = source.selectionStart ?? 0;
+  const end = source.selectionEnd ?? 0;
+
+  event.preventDefault();
+
+  if (start === end && value[start] === closer && value[start - 1] === opener) {
+    source.setSelectionRange(start + 1, start + 1);
+    return;
+  }
+
+  source.setRangeText(opener + closer, start, end, 'end');
+  source.setSelectionRange(start + 1, start + 1);
+  source.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function handleBracketComplete(event) {
+  const closer = event.key;
+  const opener = BRACKET_OPENERS.get(closer);
+  if (!opener) return;
+
+  const value = source.value;
+  const start = source.selectionStart ?? 0;
+  const end = source.selectionEnd ?? 0;
+
+  if (start !== end) return;
+  if (value[start] !== closer || value[start - 1] !== opener) return;
+
+  event.preventDefault();
+  source.setSelectionRange(start + 1, start + 1);
+}
+
+function outdentLine(line) {
+  const spaces = line.match(/^ {1,2}/u);
+  if (spaces) return line.slice(spaces[0].length);
+  if (line.startsWith('\t')) return line.slice(1);
+  return line;
+}
+
+function indentOrOutdent(outdent) {
+  const value = source.value;
+  const start = source.selectionStart ?? 0;
+  const end = source.selectionEnd ?? 0;
+
+  if (!value.slice(start, end).includes('\n')) {
+    if (outdent) {
+      const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+      const line = value.slice(lineStart);
+      const cut = line.length - outdentLine(line).length;
+      if (!cut) return false;
+      source.setRangeText('', lineStart, lineStart + cut, 'start');
+      source.setSelectionRange(
+        Math.max(start - cut, lineStart),
+        Math.max(end - cut, lineStart),
+      );
+      return true;
+    }
+
+    source.setRangeText(INDENT, start, end, 'end');
+    return true;
+  }
+
+  const blockStart = value.lastIndexOf('\n', start - 1) + 1;
+  let blockEnd = value.indexOf('\n', end);
+  if (blockEnd === -1) blockEnd = value.length;
+
+  const lines = value.slice(blockStart, blockEnd).split('\n');
+  const newLines = lines.map((line) =>
+    outdent ? outdentLine(line) : INDENT + line,
+  );
+  if (newLines.every((line, index) => line === lines[index])) {
+    return false;
+  }
+
+  source.setRangeText(newLines.join('\n'), blockStart, blockEnd, 'select');
+  return true;
+}
+
 source.addEventListener('input', handleInput);
 source.addEventListener('click', updateEditorHighlight);
 source.addEventListener('keyup', updateEditorHighlight);
 source.addEventListener('select', updateEditorHighlight);
 source.addEventListener('scroll', () => {
   lineNumbers.scrollTop = source.scrollTop;
+  if (codeHighlight) {
+    codeHighlight.scrollTop = source.scrollTop;
+    codeHighlight.scrollLeft = source.scrollLeft;
+  }
 });
 source.addEventListener('keydown', (event) => {
-  if (event.key !== 'Tab') return;
-  event.preventDefault();
-  source.setRangeText('  ', source.selectionStart, source.selectionEnd, 'end');
-  source.dispatchEvent(new Event('input', { bubbles: true }));
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    if (indentOrOutdent(event.shiftKey)) {
+      source.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    return;
+  }
+
+  if (!event.shiftKey && BRACKET_PAIRS.has(event.key)) {
+    handleBracketInput(event);
+    return;
+  }
+
+  if (BRACKET_OPENERS.has(event.key)) {
+    handleBracketComplete(event);
+  }
 });
 
 helpButton.addEventListener('click', () => syntaxDialog.showModal());
@@ -714,6 +841,9 @@ document.addEventListener('keydown', (event) => {
 });
 
 languageSelect.addEventListener('change', handleLanguageChange);
+themeSelect.addEventListener('change', () => {
+  applyThemePreference(themeSelect.value);
+});
 
 const resizeObserver = new ResizeObserver(() => {
   if (autoFit && currentDiagram) fitView();

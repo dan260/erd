@@ -6,7 +6,7 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
-const source = ['i18n.js', 'theme.js', 'parser.js', 'layout.js', 'drawio.js']
+const source = ['i18n.js', 'theme.js', 'parser.js', 'layout.js', 'drawio.js', 'highlight.js']
   .map((name) => readFileSync(path.join(root, 'src', name), 'utf8'))
   .join('\n');
 const load = new Function(`${source}
@@ -16,6 +16,8 @@ return {
   parseTypeModifiers,
   layoutDiagram,
   buildDrawioFile,
+  highlightSchema,
+  escapeHtmlText,
 };`);
 
 const {
@@ -24,6 +26,8 @@ const {
   parseTypeModifiers,
   layoutDiagram,
   buildDrawioFile,
+  highlightSchema,
+  escapeHtmlText,
 } = load();
 
 export {
@@ -32,4 +36,6 @@ export {
   parseTypeModifiers,
   layoutDiagram,
   buildDrawioFile,
+  highlightSchema,
+  escapeHtmlText,
 };
