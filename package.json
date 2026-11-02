@@ -1,0 +1,11 @@
+{
+  "name": "erdraft",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-only text-to-ERD tool with .drawio export",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test"
+  }
+}
