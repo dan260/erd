@@ -1,9 +1,11 @@
 # ERDraft
 
-A minimalist ER-diagram editor that runs entirely in the browser.
+ A minimalist ER-diagram editor that runs entirely in the browser.
 The schema is described in text, and the visual diagram is built
 automatically on the right. The result can be exported to the
 editable `.drawio` format.
+
+**Open the app:** [https://dan260.github.io/erd/](https://dan260.github.io/erd/)
 
 ## Features
 
