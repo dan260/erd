@@ -2,6 +2,7 @@
   "name": "erdraft",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Browser-only text-to-ERD tool with .drawio export",
   "scripts": {

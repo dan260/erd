@@ -242,3 +242,7 @@ src/appearance.js   light/dark/system theme
 test/               unit tests
 scripts/            source loader for tests
 ```
+
+## License
+
+[MIT](LICENSE) — Copyright (c) 2026 dan260.
