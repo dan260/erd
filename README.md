@@ -207,6 +207,8 @@ binary content are rejected with a notification.
 - Mouse wheel — zoom.
 - Dragging the background — panning.
 - Double-click on the canvas — fit the diagram.
+- Hovering an entity highlights it and its relations in the diagram.
+- Clicking an entity moves the editor caret to that entity.
 - `Tab` in the editor — indent the caret line, or every line of a
   selection. `Shift+Tab` — the reverse.
 - `Ctrl/Cmd + E` — export `.drawio`.

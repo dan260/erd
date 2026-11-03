@@ -80,6 +80,7 @@ const settingsPopover = document.querySelector('#settingsPopover');
 
 const SCHEMA_FILENAME = 'erdraft-schema.erdraft';
 const MAX_FILE_SIZE = 1_000_000;
+const NODE_CLICK_DRAG_MAX = 4;
 
 const fileInput = document.createElement('input');
 fileInput.type = 'file';
@@ -285,14 +286,20 @@ function updateEditorHighlight() {
 
 function handleCanvasHover(name) {
   canvasFocus = name;
+  applyHighlight();
+}
 
-  if (name) {
-    const entity = currentDiagram?.entities.find(
-      (item) => item.name === name,
-    );
-    if (entity?.line) focusLine(entity.line);
-  }
+function selectNode(name) {
+  if (!name) return;
 
+  const entity = currentDiagram?.entities.find(
+    (item) => item.name === name,
+  );
+  if (!entity?.line) return;
+
+  canvasFocus = name;
+  focusLine(entity.line);
+  updateEditorHighlight();
   applyHighlight();
 }
 
@@ -651,11 +658,13 @@ function handlePointerDown(event) {
   if (!event.target.closest('.diagram-svg')) return;
   if (!currentDiagram || !view) return;
 
+  const node = event.target.closest('.erd-node');
   dragState = {
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
     view: { ...view },
+    entity: node ? node.dataset.entity : null,
   };
 
   diagramViewport.classList.add('is-panning');
@@ -686,10 +695,19 @@ function handlePointerMove(event) {
 function handlePointerUp(event) {
   if (!dragState || dragState.pointerId !== event.pointerId) return;
 
+  const dx = event.clientX - dragState.startX;
+  const dy = event.clientY - dragState.startY;
+  const wasClick = Math.hypot(dx, dy) <= NODE_CLICK_DRAG_MAX;
+  const entity = dragState.entity;
+
   dragState = null;
   diagramViewport.classList.remove('is-panning');
   if (diagramViewport.hasPointerCapture(event.pointerId)) {
     diagramViewport.releasePointerCapture(event.pointerId);
+  }
+
+  if (wasClick && event.type === 'pointerup') {
+    selectNode(entity);
   }
 }
 
