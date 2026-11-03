@@ -5,6 +5,20 @@ const NODE_GAP = 42;
 const COMPONENT_GAP_X = 150;
 const COMPONENT_GAP_Y = 132;
 const MAX_ROW_WIDTH = 1900;
+const LABEL_GAP_MARGIN = 16;
+
+function pairKey(first, second) {
+  return [first, second].sort().join('\u0000');
+}
+
+// Neighbours on the same layer (row or column) may share a relation whose
+// line sits in the gap between them. When that label is wider than the
+// default gap, the gap stretches so the label fits without shrinking.
+function pairSpacing(first, second, pairWidths) {
+  if (!pairWidths || !second) return NODE_GAP;
+  const width = pairWidths.get(pairKey(first, second));
+  return width ? Math.max(NODE_GAP, width + LABEL_GAP_MARGIN) : NODE_GAP;
+}
 
 function buildAdjacency(nodes, relations) {
   const adjacency = new Map(nodes.map((node) => [node.name, new Set()]));
@@ -162,7 +176,18 @@ function orderLayers(layers, adjacency) {
   }
 }
 
-function layoutComponent(component, adjacency, orientation) {
+function stackExtent(layer, size, pairWidths) {
+  let sum = 0;
+  layer.forEach((node, index) => {
+    sum += node[size];
+    if (index + 1 < layer.length) {
+      sum += pairSpacing(node.name, layer[index + 1].name, pairWidths);
+    }
+  });
+  return sum;
+}
+
+function layoutComponent(component, adjacency, orientation, pairWidths) {
   if (component.length === 1) {
     const [node] = component;
     return {
@@ -182,10 +207,8 @@ function layoutComponent(component, adjacency, orientation) {
     const rowHeights = layers.map((layer) =>
       Math.max(...layer.map((node) => node.height)),
     );
-    const rowWidths = layers.map(
-      (layer) =>
-        layer.reduce((sum, node) => sum + node.width, 0) +
-        Math.max(0, layer.length - 1) * NODE_GAP,
+    const rowWidths = layers.map((layer) =>
+      stackExtent(layer, 'width', pairWidths),
     );
     const blockWidth = Math.max(...rowWidths);
 
@@ -195,23 +218,27 @@ function layoutComponent(component, adjacency, orientation) {
       const offsetX = (blockWidth - rowWidths[layerIndex]) / 2;
       let cursorX = offsetX;
 
-      for (const node of layer) {
+      layer.forEach((node, index) => {
         positions.set(node.name, {
           x: cursorX,
           y: cursorY + (rowHeight - node.height) / 2,
         });
-        cursorX += node.width + NODE_GAP;
-      }
+        cursorX +=
+          node.width +
+          pairSpacing(
+            node.name,
+            index + 1 < layer.length ? layer[index + 1].name : null,
+            pairWidths,
+          );
+      });
       cursorY += rowHeight + LAYER_GAP;
     });
   } else {
     const layerWidths = layers.map((layer) =>
       Math.max(...layer.map((node) => node.width)),
     );
-    const layerHeights = layers.map(
-      (layer) =>
-        layer.reduce((sum, node) => sum + node.height, 0) +
-        Math.max(0, layer.length - 1) * NODE_GAP,
+    const layerHeights = layers.map((layer) =>
+      stackExtent(layer, 'height', pairWidths),
     );
     const blockHeight = Math.max(...layerHeights);
 
@@ -220,13 +247,19 @@ function layoutComponent(component, adjacency, orientation) {
       const columnWidth = layerWidths[layerIndex];
       let cursorY = -layerHeights[layerIndex] / 2;
 
-      for (const node of layer) {
+      layer.forEach((node, index) => {
         positions.set(node.name, {
           x: cursorX + (columnWidth - node.width) / 2,
           y: cursorY,
         });
-        cursorY += node.height + NODE_GAP;
-      }
+        cursorY +=
+          node.height +
+          pairSpacing(
+            node.name,
+            index + 1 < layer.length ? layer[index + 1].name : null,
+            pairWidths,
+          );
+      });
       cursorX += columnWidth + LAYER_GAP;
     });
 
@@ -275,9 +308,20 @@ function layoutDiagram(nodes, relations, options) {
   const vertical = orientation === 'vertical';
 
   const adjacency = buildAdjacency(nodes, relations);
+
+  const pairWidths = new Map();
+  if (options && options.labelWidths) {
+    for (const relation of relations) {
+      const width = options.labelWidths.get(relation.id);
+      if (!width || relation.source === relation.target) continue;
+      const key = pairKey(relation.source, relation.target);
+      pairWidths.set(key, Math.max(pairWidths.get(key) || 0, width));
+    }
+  }
+
   const components = collectComponents(nodes, adjacency);
   const laidOut = components.map((component) =>
-    layoutComponent(component, adjacency, orientation),
+    layoutComponent(component, adjacency, orientation, pairWidths),
   );
 
   laidOut.sort((a, b) => a.firstOrder - b.firstOrder);

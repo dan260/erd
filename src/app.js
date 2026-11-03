@@ -476,7 +476,10 @@ function parseAndRender() {
   }
 
   const measured = measureEntities(parsed.entities);
-  const layout = layoutDiagram(measured, parsed.relations, ERDRAFT_SETTINGS);
+  const layout = layoutDiagram(measured, parsed.relations, {
+    ...ERDRAFT_SETTINGS,
+    labelWidths: measureLabelWidths(parsed.relations),
+  });
   const rendered = renderDiagram(
     diagram,
     layout,

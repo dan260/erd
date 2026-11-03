@@ -186,26 +186,9 @@ function routeSides(relation, nodeMap) {
   };
 }
 
-function edgeGeometry(
-  relation,
-  nodeMap,
-  route,
-  startOffset,
-  endOffset,
-  selfOptions,
-) {
+function edgeGeometry(relation, nodeMap, route, startOffset, endOffset) {
   const source = nodeMap.get(relation.source);
   const target = nodeMap.get(relation.target);
-
-  if (route.self) {
-    return selfLoopGeometry(
-      relation,
-      source,
-      selfOptions.index,
-      selfOptions.count,
-      selfOptions.side,
-    );
-  }
 
   const sourceCenter = {
     x: source.x + source.width / 2,
@@ -326,6 +309,127 @@ function selfLoopGeometry(relation, node, index, count, side) {
     controlB,
     label,
   };
+}
+
+function cardBounds(node) {
+  return { x: node.x, y: node.y, width: node.width, height: node.height };
+}
+
+function rectIntersects(a, b) {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+// Label overlap with a set of static rects is monotone in the label width,
+// so binary search finds the widest pill centered at `point` that still keeps
+// `margin` of clearance from every card.
+function maxClearWidth(point, maxHalfWidth, height, cards, margin) {
+  const hits = (halfWidth) => {
+    const rect = {
+      x: point.x - halfWidth - margin,
+      y: point.y - height / 2 - margin,
+      width: halfWidth * 2 + margin * 2,
+      height: height + margin * 2,
+    };
+    for (const card of cards) {
+      if (rectIntersects(rect, card)) return true;
+    }
+    return false;
+  };
+
+  if (!hits(maxHalfWidth)) return maxHalfWidth * 2;
+
+  let low = 0;
+  let high = maxHalfWidth;
+  for (let i = 0; i < 18; i += 1) {
+    const mid = (low + high) / 2;
+    if (hits(mid)) high = mid;
+    else low = mid;
+  }
+
+  return low * 2;
+}
+
+// Picks where along the curve the label sits. The curve midpoint can land on
+// a neighbouring card (wide star edges, same-layer edges squeezed between
+// rows or columns); sampling the curve finds the spot with the most free
+// space, and the label width is clamped to fit that gap.
+function positionLabelAlongCurve(geometry, size, cards) {
+  const SPREAD = 0.28;
+  const margin = 4;
+
+  const evaluate = (t) => {
+    const point = cubicPoint(
+      geometry.start,
+      geometry.controlA,
+      geometry.controlB,
+      geometry.end,
+      t,
+    );
+    return {
+      point,
+      t,
+      width: maxClearWidth(point, size.width / 2, size.height, cards, margin),
+    };
+  };
+
+  const better = (a, b) => {
+    if (a.width !== b.width) return a.width > b.width;
+    return Math.abs(a.t - 0.5) < Math.abs(b.t - 0.5);
+  };
+
+  let best = evaluate(0.5);
+  if (best.width >= size.width) return best;
+
+  for (let i = 1; i <= 20; i += 1) {
+    for (const t of [0.5 - SPREAD * (i / 20), 0.5 + SPREAD * (i / 20)]) {
+      const candidate = evaluate(t);
+      if (better(candidate, best)) best = candidate;
+    }
+  }
+
+  return best;
+}
+
+// A self loop is drawn from one side of its card, and the label rides outside
+// the loop on that same side. When another card stands on that side, the
+// label lands on it; trying all four sides finds where the label fits and
+// moves the loop along with it.
+function positionSelfLoopLabel(
+  relation,
+  node,
+  index,
+  count,
+  preferredSide,
+  size,
+  cards,
+) {
+  const margin = 4;
+  const order = [
+    preferredSide,
+    ...['right', 'left', 'bottom', 'top'].filter((s) => s !== preferredSide),
+  ];
+
+  let best = null;
+  for (const side of order) {
+    const geometry = selfLoopGeometry(relation, node, index, count, side);
+    const width = maxClearWidth(
+      geometry.label,
+      size.width / 2,
+      size.height,
+      cards,
+      margin,
+    );
+    if (!best || width > best.width) {
+      best = { geometry, width };
+    }
+  }
+
+  return best;
 }
 
 function appendCardinality(parent, geometry, from, cardinality) {
@@ -617,10 +721,33 @@ function renderEntities(parent, nodes, svgName) {
   return nodeGroups;
 }
 
-function renderLabel(parent, relation, point) {
-  const fullText = relation.label;
-  const displayText = truncateText(fullText, FONT_LABEL, 220);
-  const width = textWidth(displayText, FONT_LABEL) + 16;
+function labelSize(relation) {
+  const displayText = truncateText(relation.label, FONT_LABEL, 220);
+  return {
+    displayText,
+    width: textWidth(displayText, FONT_LABEL) + 16,
+    height: 21,
+  };
+}
+
+// Pill widths per relation, keyed by relation id. The layout uses these to
+// stretch the gap between same-layer neighbours that share a relation, so the
+// label gets room instead of being squeezed down.
+function measureLabelWidths(relations) {
+  const widths = new Map();
+  for (const relation of relations) {
+    if (!relation.label) continue;
+    widths.set(relation.id, labelSize(relation).width);
+  }
+  return widths;
+}
+
+function renderLabel(parent, relation, point, width) {
+  const displayText = truncateText(
+    relation.label,
+    FONT_LABEL,
+    Math.max(24, width - 16),
+  );
   const height = 21;
   const group = createElement(
     'g',
@@ -757,6 +884,7 @@ function renderDiagram(svg, layout, relations, onNodeHover) {
   );
 
   const nodeMap = new Map(layout.nodes.map((node) => [node.name, node]));
+  const cardBoundsList = layout.nodes.map(cardBounds);
   const routes = relations.map((relation) =>
     routeSides(relation, nodeMap),
   );
@@ -878,24 +1006,40 @@ function renderDiagram(svg, layout, relations, onNodeHover) {
       selfIndexes.set(relation.source, selfIndex + 1);
     }
 
-    const geometry = edgeGeometry(
-      relation,
-      nodeMap,
-      routes[relationIndex],
-      routes[relationIndex].self
-        ? 0
-        : startOffsets[relationIndex],
-      routes[relationIndex].self
-        ? 0
-        : endOffsets[relationIndex],
-      routes[relationIndex].self
-        ? {
-            index: selfIndex,
-            count: selfCounts.get(relation.source) || 1,
-            side: selfSides.get(relation.source) || 'right',
-          }
-        : null,
-    );
+    let geometry;
+    let selfPlacement = null;
+    if (routes[relationIndex].self) {
+      const preferred = selfSides.get(relation.source) || 'right';
+      if (relation.label) {
+        const found = positionSelfLoopLabel(
+          relation,
+          source,
+          selfIndex,
+          selfCounts.get(relation.source) || 1,
+          preferred,
+          labelSize(relation),
+          cardBoundsList,
+        );
+        geometry = found.geometry;
+        selfPlacement = { point: found.geometry.label, width: found.width };
+      } else {
+        geometry = selfLoopGeometry(
+          relation,
+          source,
+          selfIndex,
+          selfCounts.get(relation.source) || 1,
+          preferred,
+        );
+      }
+    } else {
+      geometry = edgeGeometry(
+        relation,
+        nodeMap,
+        routes[relationIndex],
+        startOffsets[relationIndex],
+        endOffsets[relationIndex],
+      );
+    }
     const edgeGroup = createElement(
       'g',
       {
@@ -934,9 +1078,21 @@ function renderDiagram(svg, layout, relations, onNodeHover) {
     edgeGroups.push(edgeGroup);
 
     if (relation.label) {
-      labelGroups.push(
-        renderLabel(labelLayer, relation, geometry.label),
-      );
+      let point;
+      let width;
+      if (routes[relationIndex].self && selfPlacement) {
+        point = selfPlacement.point;
+        width = selfPlacement.width;
+      } else {
+        const spot = positionLabelAlongCurve(
+          geometry,
+          labelSize(relation),
+          cardBoundsList,
+        );
+        point = spot.point;
+        width = spot.width;
+      }
+      labelGroups.push(renderLabel(labelLayer, relation, point, width));
     }
   }
 
