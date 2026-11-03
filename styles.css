@@ -1044,10 +1044,6 @@ html.no-js .source-editor {
   transition: stroke 160ms ease;
 }
 
-.erd-node:hover .erd-card-outline {
-  stroke: #bcb6aa;
-}
-
 .erd-card-title {
   fill: #1b2230;
   font-family: var(--font-ui);

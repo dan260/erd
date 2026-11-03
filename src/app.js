@@ -96,8 +96,8 @@ let parseTimer = null;
 let saveTimer = null;
 let toastTimer = null;
 let dragState = null;
-let canvasFocus = null;
 let editorFocus = null;
+let canvasClickCaretLine = null;
 
 function entityCount(value) {
   return I18N.plural(value, 'entities');
@@ -269,7 +269,7 @@ function findEntityAtLine(line, entities, lineCount) {
 }
 
 function applyHighlight() {
-  currentDiagram?.highlight?.(canvasFocus ?? editorFocus);
+  currentDiagram?.highlight?.(editorFocus);
 }
 
 function updateEditorHighlight() {
@@ -284,23 +284,22 @@ function updateEditorHighlight() {
   applyHighlight();
 }
 
-function handleCanvasHover(name) {
-  canvasFocus = name;
-  applyHighlight();
-}
-
 function selectNode(name) {
-  if (!name) return;
+  if (!name) {
+    editorFocus = null;
+    canvasClickCaretLine = caretLine();
+    applyHighlight();
+    return;
+  }
 
   const entity = currentDiagram?.entities.find(
     (item) => item.name === name,
   );
   if (!entity?.line) return;
 
-  canvasFocus = name;
   focusLine(entity.line);
+  canvasClickCaretLine = caretLine();
   updateEditorHighlight();
-  applyHighlight();
 }
 
 function showEmpty(title, text, withExample) {
@@ -450,7 +449,6 @@ function parseAndRender() {
     setStatus('error', errorCount(parsed.errors.length));
     setExportEnabled(false, I18N.t('export.title.invalid'));
 
-    canvasFocus = null;
     editorFocus = null;
     currentDiagram?.highlight?.(null);
 
@@ -475,7 +473,6 @@ function parseAndRender() {
     setStatus('empty', I18N.t('status.empty'));
     setExportEnabled(false, I18N.t('export.title.empty'));
     canvasStale.hidden = true;
-    canvasFocus = null;
     editorFocus = null;
     showEmpty(
       I18N.t('canvas.now.title'),
@@ -490,12 +487,7 @@ function parseAndRender() {
     ...ERDRAFT_SETTINGS,
     labelWidths: measureLabelWidths(parsed.relations),
   });
-  const rendered = renderDiagram(
-    diagram,
-    layout,
-    parsed.relations,
-    handleCanvasHover,
-  );
+  const rendered = renderDiagram(diagram, layout, parsed.relations);
 
   currentDiagram = {
     layout,
@@ -514,7 +506,6 @@ function parseAndRender() {
   setExportEnabled(true);
   updateZoomControls();
 
-  canvasFocus = null;
   updateEditorHighlight();
 
   if (autoFit) {
@@ -527,7 +518,6 @@ function parseAndRender() {
 function handleInput() {
   updateGutter();
   scheduleSave();
-  canvasFocus = null;
   updateEditorHighlight();
   window.clearTimeout(parseTimer);
   parseTimer = window.setTimeout(parseAndRender, 140);
@@ -825,7 +815,15 @@ function indentOrOutdent(outdent) {
 source.addEventListener('input', handleInput);
 source.addEventListener('click', updateEditorHighlight);
 source.addEventListener('keyup', updateEditorHighlight);
-source.addEventListener('select', updateEditorHighlight);
+source.addEventListener('select', () => {
+  // A canvas click/press makes the browser fire a spurious `select` on the
+  // still-focused textarea; ignore it when the caret line didn't move.
+  if (canvasClickCaretLine !== null && canvasClickCaretLine === caretLine()) {
+    return;
+  }
+  canvasClickCaretLine = null;
+  updateEditorHighlight();
+});
 source.addEventListener('scroll', () => {
   lineNumbers.scrollTop = source.scrollTop;
   if (codeHighlight) {

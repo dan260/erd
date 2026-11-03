@@ -786,13 +786,7 @@ function renderLabel(parent, relation, point, width) {
   return group;
 }
 
-function attachHighlighting(
-  svg,
-  nodeGroups,
-  edgeGroups,
-  labelGroups,
-  onNodeHover,
-) {
+function attachHighlighting(svg, nodeGroups, edgeGroups, labelGroups) {
   const setHighlight = (name) => {
     const hasFocus =
       Boolean(name) &&
@@ -814,22 +808,10 @@ function attachHighlighting(
     }
   };
 
-  for (const group of nodeGroups) {
-    const name = group.dataset.entity;
-    group.addEventListener('pointerenter', () => {
-      setHighlight(name);
-      onNodeHover?.(name);
-    });
-    group.addEventListener('pointerleave', () => {
-      setHighlight(null);
-      onNodeHover?.(null);
-    });
-  }
-
   return setHighlight;
 }
 
-function renderDiagram(svg, layout, relations, onNodeHover) {
+function renderDiagram(svg, layout, relations) {
   svg.replaceChildren();
   svg.setAttribute('role', 'img');
   svg.setAttribute(
@@ -1097,13 +1079,7 @@ function renderDiagram(svg, layout, relations, onNodeHover) {
   }
 
   const nodeGroups = renderEntities(nodeLayer, layout.nodes, svgName);
-  const highlight = attachHighlighting(
-    svg,
-    nodeGroups,
-    edgeGroups,
-    labelGroups,
-    onNodeHover,
-  );
+  const highlight = attachHighlighting(svg, nodeGroups, edgeGroups, labelGroups);
 
   const contentBox = root.getBBox();
   const viewWidth = Math.max(

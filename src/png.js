@@ -21,7 +21,6 @@ const FALLBACK_DIAGRAM_STYLES = [
   '.erd-card-shadow { fill: #fff; }',
   '.erd-card { fill: #fffdfb; }',
   '.erd-card-outline { fill: none; stroke: #d9d5cc; stroke-width: 1; }',
-  '.erd-node:hover .erd-card-outline { stroke: #bcb6aa; }',
   '.erd-card-title { fill: #1b2230; font-family: var(--font-ui); font-size: 14px; font-weight: 600; letter-spacing: -0.012em; dominant-baseline: middle; }',
   '.erd-field-name { fill: #353b46; font-family: var(--font-ui); font-size: 13px; font-weight: 500; dominant-baseline: middle; }',
   '.erd-field-type { fill: #8a8f99; font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; dominant-baseline: middle; }',
