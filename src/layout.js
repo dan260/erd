@@ -162,7 +162,7 @@ function orderLayers(layers, adjacency) {
   }
 }
 
-function layoutComponent(component, adjacency) {
+function layoutComponent(component, adjacency, orientation) {
   if (component.length === 1) {
     const [node] = component;
     return {
@@ -175,34 +175,65 @@ function layoutComponent(component, adjacency) {
 
   const layers = buildLayers(component, adjacency);
   orderLayers(layers, adjacency);
-
-  const layerWidths = layers.map((layer) =>
-    Math.max(...layer.map((node) => node.width)),
-  );
-  const layerHeights = layers.map(
-    (layer) =>
-      layer.reduce((sum, node) => sum + node.height, 0) +
-      Math.max(0, layer.length - 1) * NODE_GAP,
-  );
-  const blockHeight = Math.max(...layerHeights);
   const positions = new Map();
+  const vertical = orientation === 'vertical';
 
-  let cursorX = 0;
+  if (vertical) {
+    const rowHeights = layers.map((layer) =>
+      Math.max(...layer.map((node) => node.height)),
+    );
+    const rowWidths = layers.map(
+      (layer) =>
+        layer.reduce((sum, node) => sum + node.width, 0) +
+        Math.max(0, layer.length - 1) * NODE_GAP,
+    );
+    const blockWidth = Math.max(...rowWidths);
 
-  layers.forEach((layer, layerIndex) => {
-    const columnWidth = layerWidths[layerIndex];
-    let cursorY = -layerHeights[layerIndex] / 2;
+    let cursorY = 0;
+    layers.forEach((layer, layerIndex) => {
+      const rowHeight = rowHeights[layerIndex];
+      const offsetX = (blockWidth - rowWidths[layerIndex]) / 2;
+      let cursorX = offsetX;
 
-    for (const node of layer) {
-      positions.set(node.name, {
-        x: cursorX + (columnWidth - node.width) / 2,
-        y: cursorY,
-      });
-      cursorY += node.height + NODE_GAP;
+      for (const node of layer) {
+        positions.set(node.name, {
+          x: cursorX,
+          y: cursorY + (rowHeight - node.height) / 2,
+        });
+        cursorX += node.width + NODE_GAP;
+      }
+      cursorY += rowHeight + LAYER_GAP;
+    });
+  } else {
+    const layerWidths = layers.map((layer) =>
+      Math.max(...layer.map((node) => node.width)),
+    );
+    const layerHeights = layers.map(
+      (layer) =>
+        layer.reduce((sum, node) => sum + node.height, 0) +
+        Math.max(0, layer.length - 1) * NODE_GAP,
+    );
+    const blockHeight = Math.max(...layerHeights);
+
+    let cursorX = 0;
+    layers.forEach((layer, layerIndex) => {
+      const columnWidth = layerWidths[layerIndex];
+      let cursorY = -layerHeights[layerIndex] / 2;
+
+      for (const node of layer) {
+        positions.set(node.name, {
+          x: cursorX + (columnWidth - node.width) / 2,
+          y: cursorY,
+        });
+        cursorY += node.height + NODE_GAP;
+      }
+      cursorX += columnWidth + LAYER_GAP;
+    });
+
+    for (const position of positions.values()) {
+      position.y += blockHeight / 2;
     }
-
-    cursorX += columnWidth + LAYER_GAP;
-  });
+  }
 
   let minX = Infinity;
   let minY = Infinity;
@@ -211,7 +242,6 @@ function layoutComponent(component, adjacency) {
 
   for (const node of component) {
     const position = positions.get(node.name);
-    position.y += blockHeight / 2;
     minX = Math.min(minX, position.x);
     minY = Math.min(minY, position.y);
     maxX = Math.max(maxX, position.x + node.width);
@@ -232,46 +262,60 @@ function layoutComponent(component, adjacency) {
 }
 
 /**
- * Deterministic layered layout. BFS levels become columns and the barycenter
- * sweeps reduce crossings. Disconnected groups are packed into rows.
+ * Deterministic layered layout. BFS levels become columns (horizontal) or
+ * rows (vertical). The barycenter sweeps reduce crossings. Disconnected groups
+ * are packed side by side.
  */
-function layoutDiagram(nodes, relations) {
+function layoutDiagram(nodes, relations, options) {
   if (nodes.length === 0) {
     return { nodes: [], width: 0, height: 0 };
   }
 
+  const orientation = (options && options.layout) || 'horizontal';
+  const vertical = orientation === 'vertical';
+
   const adjacency = buildAdjacency(nodes, relations);
   const components = collectComponents(nodes, adjacency);
   const laidOut = components.map((component) =>
-    layoutComponent(component, adjacency),
+    layoutComponent(component, adjacency, orientation),
   );
 
   laidOut.sort((a, b) => a.firstOrder - b.firstOrder);
-
-  let cursorX = 0;
-  let cursorY = 0;
-  let rowHeight = 0;
   const finalPositions = new Map();
 
-  for (const component of laidOut) {
-    if (
-      cursorX > 0 &&
-      cursorX + component.width > MAX_ROW_WIDTH
-    ) {
-      cursorX = 0;
-      cursorY += rowHeight + COMPONENT_GAP_Y;
-      rowHeight = 0;
+  if (vertical) {
+    let cursorY = 0;
+    for (const component of laidOut) {
+      for (const [name, position] of component.positions) {
+        finalPositions.set(name, {
+          x: position.x,
+          y: position.y + cursorY,
+        });
+      }
+      cursorY += component.height + COMPONENT_GAP_Y;
     }
-
-    for (const [name, position] of component.positions) {
-      finalPositions.set(name, {
-        x: position.x + cursorX,
-        y: position.y + cursorY,
-      });
+  } else {
+    let cursorX = 0;
+    let cursorY = 0;
+    let rowHeight = 0;
+    for (const component of laidOut) {
+      if (
+        cursorX > 0 &&
+        cursorX + component.width > MAX_ROW_WIDTH
+      ) {
+        cursorX = 0;
+        cursorY += rowHeight + COMPONENT_GAP_Y;
+        rowHeight = 0;
+      }
+      for (const [name, position] of component.positions) {
+        finalPositions.set(name, {
+          x: position.x + cursorX,
+          y: position.y + cursorY,
+        });
+      }
+      cursorX += component.width + COMPONENT_GAP_X;
+      rowHeight = Math.max(rowHeight, component.height);
     }
-
-    cursorX += component.width + COMPONENT_GAP_X;
-    rowHeight = Math.max(rowHeight, component.height);
   }
 
   const positioned = nodes.map((node) => {

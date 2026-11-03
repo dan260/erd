@@ -74,6 +74,8 @@ const languageSelect = document.querySelector('#languageSelect');
 const themeSelect = document.querySelector('#themeSelect');
 const saveFileButton = document.querySelector('#saveFileButton');
 const openFileButton = document.querySelector('#openFileButton');
+const settingsButton = document.querySelector('#settingsButton');
+const settingsPopover = document.querySelector('#settingsPopover');
 
 const SCHEMA_FILENAME = 'erdraft-schema.erdraft';
 const MAX_FILE_SIZE = 1_000_000;
@@ -474,7 +476,7 @@ function parseAndRender() {
   }
 
   const measured = measureEntities(parsed.entities);
-  const layout = layoutDiagram(measured, parsed.relations);
+  const layout = layoutDiagram(measured, parsed.relations, ERDRAFT_SETTINGS);
   const rendered = renderDiagram(
     diagram,
     layout,
@@ -843,6 +845,40 @@ document.addEventListener('keydown', (event) => {
 languageSelect.addEventListener('change', handleLanguageChange);
 themeSelect.addEventListener('change', () => {
   applyThemePreference(themeSelect.value);
+});
+
+function syncSettingsUI() {
+  for (const btn of settingsPopover.querySelectorAll('.segment-btn')) {
+    const checked = btn.dataset.value === ERDRAFT_SETTINGS[btn.dataset.setting];
+    btn.setAttribute('aria-checked', String(checked));
+  }
+}
+
+settingsButton.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const isHidden = settingsPopover.hidden;
+  settingsPopover.hidden = !isHidden;
+  settingsButton.setAttribute('aria-expanded', String(isHidden));
+  if (isHidden) syncSettingsUI();
+});
+
+settingsPopover.addEventListener('click', (event) => {
+  const btn = event.target.closest('.segment-btn');
+  if (!btn) return;
+  event.stopPropagation();
+  setSetting(btn.dataset.setting, btn.dataset.value);
+  syncSettingsUI();
+  if (currentDiagram) {
+    window.clearTimeout(parseTimer);
+    parseTimer = window.setTimeout(parseAndRender, 50);
+  }
+});
+
+document.addEventListener('click', () => {
+  if (!settingsPopover.hidden) {
+    settingsPopover.hidden = true;
+    settingsButton.setAttribute('aria-expanded', 'false');
+  }
 });
 
 const resizeObserver = new ResizeObserver(() => {

@@ -909,15 +909,15 @@ function renderDiagram(svg, layout, relations, onNodeHover) {
     createElement('title', {}, edgeGroup).textContent =
       relationTooltip(relation);
 
-    createElement(
-      'path',
-      {
-        d: geometry.path,
-        class: 'erd-edge-line',
-        stroke: EDGE_COLOR,
-      },
-      edgeGroup,
-    );
+    const pathAttrs = {
+      d: geometry.path,
+      class: 'erd-edge-line',
+      stroke: EDGE_COLOR,
+    };
+    if (typeof ERDRAFT_SETTINGS !== 'undefined' && ERDRAFT_SETTINGS.edgeStyle === 'dashed') {
+      pathAttrs['stroke-dasharray'] = '8 5';
+    }
+    createElement('path', pathAttrs, edgeGroup);
 
     appendCardinality(
       edgeGroup,
