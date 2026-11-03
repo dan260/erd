@@ -852,6 +852,8 @@ html.no-js .source-editor {
 .diagram-head {
   background: var(--panel-translucent);
   backdrop-filter: blur(10px);
+  position: relative;
+  z-index: 10;
 }
 
 .diagram-controls {
@@ -877,7 +879,7 @@ html.no-js .source-editor {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 10px;
