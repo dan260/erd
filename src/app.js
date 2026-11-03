@@ -56,6 +56,7 @@ const diagnosticsCount = document.querySelector('#diagnosticsCount');
 const diagnosticsList = document.querySelector('#diagnosticsList');
 const saveStatus = document.querySelector('#saveStatus');
 const exportButton = document.querySelector('#exportButton');
+const exportPngButton = document.querySelector('#exportPngButton');
 const helpButton = document.querySelector('#helpButton');
 const syntaxDialog = document.querySelector('#syntaxDialog');
 const syntaxExampleCode = document.querySelector('#syntaxExampleCode');
@@ -304,7 +305,9 @@ function showEmpty(title, text, withExample) {
 
 function setExportEnabled(enabled, title) {
   exportButton.disabled = !enabled;
-  exportButton.title = title;
+  exportButton.title = enabled ? I18N.t('export.title.ready') : title;
+  exportPngButton.disabled = !enabled;
+  exportPngButton.title = enabled ? I18N.t('export.title.readyPng') : title;
 }
 
 function renderDiagnostics(errors) {
@@ -501,7 +504,7 @@ function parseAndRender() {
     'ok',
     `${entityCount(parsed.entities.length)} · ${relationCount(parsed.relations.length)}`,
   );
-  setExportEnabled(true, I18N.t('export.title.ready'));
+  setExportEnabled(true);
   updateZoomControls();
 
   canvasFocus = null;
@@ -548,16 +551,43 @@ function handleExport() {
   const blob = new Blob([xml], {
     type: 'application/xml;charset=utf-8',
   });
+  downloadBlob(blob, 'erdraft-diagram.drawio');
+  showToast(I18N.t('toast.exported'));
+}
+
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
 
   link.href = url;
-  link.download = 'erdraft-diagram.drawio';
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast(I18N.t('toast.exported'));
+}
+
+async function handleExportPng() {
+  if (parseTimer !== null) parseAndRender();
+
+  if (!currentDiagram || exportPngButton.disabled) {
+    showToast(I18N.t('toast.notReady'));
+    return;
+  }
+
+  const bounds = currentDiagram.renderBounds;
+  try {
+    const blob = await exportDiagramPng(
+      diagram,
+      bounds.width,
+      bounds.height,
+    );
+    downloadBlob(blob, 'erdraft-diagram.png');
+    showToast(I18N.t('toast.pngExported'));
+  } catch (error) {
+    console.warn('PNG export failed', error);
+    showToast(I18N.t('toast.pngFailed'));
+  }
 }
 
 function handleSaveFile() {
@@ -811,6 +841,7 @@ syntaxDialog.addEventListener('click', (event) => {
   if (event.target === syntaxDialog) syntaxDialog.close();
 });
 exportButton.addEventListener('click', handleExport);
+exportPngButton.addEventListener('click', handleExportPng);
 exampleButton.addEventListener('click', handleExample);
 saveFileButton.addEventListener('click', handleSaveFile);
 openFileButton.addEventListener('click', handleOpenFile);
@@ -836,7 +867,8 @@ document.addEventListener('keydown', (event) => {
   switch (event.key.toLowerCase()) {
     case 'e':
       event.preventDefault();
-      handleExport();
+      if (event.shiftKey) handleExportPng();
+      else handleExport();
       break;
     case 's':
       event.preventDefault();

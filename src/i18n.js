@@ -13,7 +13,7 @@ const I18N = (() => {
     en: {
       title: 'ERDraft — ER diagrams from text',
       'meta.description':
-        'Create ER diagrams from text and export them to .drawio. Works entirely in your browser.',
+        'Create ER diagrams from text and export them to .drawio or .png. Works entirely in your browser.',
       'brand.aria': 'ERDraft — go home',
       'brand.tagline': 'text → diagram',
       'language.aria': 'Language',
@@ -39,7 +39,10 @@ const I18N = (() => {
       'export.title.invalid': 'Fix the schema errors first',
       'export.title.empty': 'Add at least one entity',
       'export.title.ready': 'Download the diagram as .drawio',
+      'export.title.readyPng': 'Download the diagram as .png',
       'toast.exported': 'Downloaded erdraft-diagram.drawio',
+      'toast.pngExported': 'Downloaded erdraft-diagram.png',
+      'toast.pngFailed': 'Could not render the diagram as .png',
       'toast.notReady': 'The diagram is not ready for export',
       'toast.example': 'Example inserted',
       'file.save': 'Save',
@@ -111,7 +114,7 @@ const I18N = (() => {
         '<code>User.posts</code> and <code>Post.author</code> describe the same one-to-many relation and will be merged.',
       'help.tip.title': 'Export',
       'help.tip.text':
-        'The “Export .drawio” button downloads an editable diagram you can open in draw.io or diagrams.net.',
+        'The “Export .drawio” button downloads an editable diagram you can open in draw.io or diagrams.net, and “Export .png” saves the drawing as an image.',
       'help.footer': 'Everything runs locally in your browser.',
       'help.gotIt': 'Got it',
       'noscript': 'ERDraft needs JavaScript to work.',
@@ -163,7 +166,7 @@ const I18N = (() => {
     ru: {
       title: 'ERDraft — ER-диаграмма из текста',
       'meta.description':
-        'ERDraft — создание ER-диаграмм из текста с экспортом в .drawio. Работает полностью в браузере.',
+        'ERDraft — создание ER-диаграмм из текста с экспортом в .drawio или .png. Работает полностью в браузере.',
       'brand.aria': 'ERDraft — на главную',
       'brand.tagline': 'текст → диаграмма',
       'language.aria': 'Язык',
@@ -189,7 +192,10 @@ const I18N = (() => {
       'export.title.invalid': 'Сначала исправьте ошибки в схеме',
       'export.title.empty': 'Добавьте хотя бы одну сущность',
       'export.title.ready': 'Скачать диаграмму в формате .drawio',
+      'export.title.readyPng': 'Скачать диаграмму в формате .png',
       'toast.exported': 'Файл erdraft-diagram.drawio скачан',
+      'toast.pngExported': 'Файл erdraft-diagram.png скачан',
+      'toast.pngFailed': 'Не удалось отрисовать диаграмму в .png',
       'toast.notReady': 'Схема пока не готова к экспорту',
       'toast.example': 'Пример загружен',
       'file.save': 'Сохранить',
@@ -261,7 +267,7 @@ const I18N = (() => {
         '<code>User.posts</code> и <code>Post.author</code> описывают одну и ту же связь «один ко многим» и будут объединены.',
       'help.tip.title': 'Экспорт',
       'help.tip.text':
-        'Кнопка «Экспорт .drawio» скачивает редактируемую диаграмму, которую можно открыть в draw.io или diagrams.net.',
+        'Кнопка «Экспорт .drawio» скачивает редактируемую диаграмму для draw.io или diagrams.net, а «Экспорт .png» сохраняет её как картинку.',
       'help.footer': 'Всё работает локально в браузере.',
       'help.gotIt': 'Понятно',
       'noscript': 'Для работы ERDraft нужен JavaScript.',

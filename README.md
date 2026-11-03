@@ -1,9 +1,9 @@
 # ERDraft
 
  A minimalist ER-diagram editor that runs entirely in the browser.
-The schema is described in text, and the visual diagram is built
+ The schema is described in text, and the visual diagram is built
 automatically on the right. The result can be exported to the
-editable `.drawio` format.
+editable `.drawio` format, or saved as a `.png` image.
 
 **Open the app:** [https://dan260.github.io/erd/](https://dan260.github.io/erd/)
 
@@ -17,7 +17,7 @@ editable `.drawio` format.
 - Self references of an entity.
 - Anonymous relations: `rel Target[1:n]` inside an entity — a line
   without a field.
-- Export to `.drawio` (draw.io / diagrams.net).
+- Export to `.drawio` (draw.io / diagrams.net) or to `.png`.
 - Save the schema to a file and load it from a file (`.erdraft`).
 - Autosaving of the text in `localStorage`.
 - Zoom, panning, and automatic fitting of the diagram.
@@ -210,6 +210,7 @@ binary content are rejected with a notification.
 - `Tab` in the editor — indent the caret line, or every line of a
   selection. `Shift+Tab` — the reverse.
 - `Ctrl/Cmd + E` — export `.drawio`.
+- `Ctrl/Cmd + Shift + E` — export `.png`.
 - **Save** / **Open** buttons in the editor footer — write the schema
   to a `.erdraft` file and load it from a file.
 - `Ctrl/Cmd + S` — save the schema to a file.
@@ -234,6 +235,7 @@ src/parser.js       text schema parser
 src/layout.js       automatic layout
 src/render.js       SVG rendering
 src/drawio.js       .drawio generation
+src/png.js          .png rendering
 src/theme.js        diagram palette
 src/highlight.js    editor syntax highlighting
 src/appearance.js   light/dark/system theme

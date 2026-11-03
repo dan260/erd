@@ -32,6 +32,7 @@
     <script defer src="src/parser.js"></script>
     <script defer src="src/layout.js"></script>
     <script defer src="src/drawio.js"></script>
+    <script defer src="src/png.js"></script>
     <script defer src="src/render.js"></script>
     <script defer src="src/highlight.js"></script>
     <script defer src="src/appearance.js"></script>
@@ -104,6 +105,14 @@
               <path d="M3.8 12.2v2.4c0 1.4 1.1 2.5 2.5 2.5h7.4c1.4 0 2.5-1.1 2.5-2.5v-2.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
             <span class="btn-label"><span data-i18n="header.export">Export</span> <span class="export-suffix">.drawio</span></span>
+          </button>
+          <button class="btn btn-quiet" id="exportPngButton" type="button" disabled>
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <rect x="3.1" y="3.4" width="13.8" height="13.2" rx="2.4" stroke="currentColor" stroke-width="1.5" />
+              <circle cx="7.6" cy="8" r="1.4" fill="currentColor" />
+              <path d="m4.9 14.6 3.5-3.3 2.8 2.5 2.2-1.9 2.9 2.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="btn-label"><span data-i18n="header.export">Export</span> <span class="export-suffix">.png</span></span>
           </button>
         </div>
       </header>
