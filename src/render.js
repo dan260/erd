@@ -107,12 +107,6 @@ function measureEntities(entities) {
   });
 }
 
-function normalize(vector) {
-  const length = Math.hypot(vector.x, vector.y);
-  if (length === 0) return { x: 0, y: 0 };
-  return { x: vector.x / length, y: vector.y / length };
-}
-
 function cubicPoint(start, controlA, controlB, end, t) {
   const inverse = 1 - t;
   return {
@@ -226,8 +220,6 @@ function edgeGeometry(
   let end;
   let controlA;
   let controlB;
-  let startInward;
-  let endInward;
 
   if (route.horizontal) {
     start = {
@@ -249,14 +241,6 @@ function edgeGeometry(
       x: end.x + (route.targetSide === 'left' ? -curve : curve),
       y: end.y,
     };
-    startInward = {
-      x: route.sourceSide === 'right' ? -1 : 1,
-      y: 0,
-    };
-    endInward = {
-      x: route.targetSide === 'left' ? 1 : -1,
-      y: 0,
-    };
   } else {
     start = {
       x: sourceCenter.x + startOffset,
@@ -277,14 +261,6 @@ function edgeGeometry(
       x: end.x,
       y: end.y + (route.targetSide === 'top' ? -curve : curve),
     };
-    startInward = {
-      x: 0,
-      y: route.sourceSide === 'bottom' ? -1 : 1,
-    };
-    endInward = {
-      x: 0,
-      y: route.targetSide === 'top' ? 1 : -1,
-    };
   }
 
   const path = `M ${start.x} ${start.y} C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${end.x} ${end.y}`;
@@ -294,8 +270,8 @@ function edgeGeometry(
     path,
     start,
     end,
-    startInward,
-    endInward,
+    controlA,
+    controlB,
     label,
   };
 }
@@ -346,52 +322,75 @@ function selfLoopGeometry(relation, node, index, count, side) {
     path: `M ${start.x} ${start.y} C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${end.x} ${end.y}`,
     start,
     end,
-    startInward: normalize({
-      x: start.x - controlA.x,
-      y: start.y - controlA.y,
-    }),
-    endInward: normalize({
-      x: end.x - controlB.x,
-      y: end.y - controlB.y,
-    }),
+    controlA,
+    controlB,
     label,
   };
 }
 
-function appendCardinality(parent, anchor, inward, cardinality) {
+function appendCardinality(parent, geometry, from, cardinality) {
   if (!cardinality) return;
 
   const many = cardinality === 'many' || cardinality === 'zeroMany';
   const optional =
     cardinality === 'zeroOne' || cardinality === 'zeroMany';
-  const perpendicular = { x: -inward.y, y: inward.x };
-  const distance = 8;
-  const apex = {
-    x: anchor.x - inward.x * distance,
-    y: anchor.y - inward.y * distance,
-  };
+
+  const start = geometry.start;
+  const controlA = geometry.controlA;
+  const controlB = geometry.controlB;
+  const end = geometry.end;
+
+  const SAMPLES = 64;
+  const points = new Array(SAMPLES + 1);
+  for (let i = 0; i <= SAMPLES; i++) {
+    const t = from === 'start' ? i / SAMPLES : 1 - i / SAMPLES;
+    points[i] = cubicPoint(start, controlA, controlB, end, t);
+  }
+
+  const cumulative = new Array(SAMPLES + 1).fill(0);
+  for (let i = 1; i <= SAMPLES; i++) {
+    cumulative[i] = cumulative[i - 1] +
+      Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+
+  function frameAt(distance) {
+    const d = Math.max(0, Math.min(distance, cumulative[SAMPLES]));
+    let idx = SAMPLES;
+    for (let i = 0; i <= SAMPLES; i++) {
+      if (cumulative[i] >= d) { idx = i; break; }
+    }
+    const prev = Math.max(0, idx - 1);
+    const segLen = cumulative[idx] - cumulative[prev];
+    const t = idx > 0 && segLen > 0.001
+      ? (d - cumulative[prev]) / segLen
+      : 0;
+    const x = points[prev].x + t * (points[idx].x - points[prev].x);
+    const y = points[prev].y + t * (points[idx].y - points[prev].y);
+    const dx = points[idx].x - points[prev].x;
+    const dy = points[idx].y - points[prev].y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x, y, tx: dx / len, ty: dy / len, px: -dy / len, py: dx / len };
+  }
 
   if (many) {
-    const tipOffset = 6;
-    for (const shift of [-tipOffset, 0, tipOffset]) {
+    const apex = frameAt(8);
+    const tip = frameAt(0.5);
+    for (const shift of [-6, 0, 6]) {
       createElement(
         'path',
         {
-          d: `M ${apex.x} ${apex.y} L ${anchor.x + perpendicular.x * shift - inward.x * 0.5} ${anchor.y + perpendicular.y * shift - inward.y * 0.5}`,
+          d: `M ${apex.x} ${apex.y} L ${tip.x + tip.px * shift} ${tip.y + tip.py * shift}`,
           class: 'erd-cardinality',
         },
         parent,
       );
     }
   } else {
-    const barCenter = {
-      x: anchor.x - inward.x * 7,
-      y: anchor.y - inward.y * 7,
-    };
+    const bar = frameAt(7);
     createElement(
       'path',
       {
-        d: `M ${barCenter.x + perpendicular.x * 5.5} ${barCenter.y + perpendicular.y * 5.5} L ${barCenter.x - perpendicular.x * 5.5} ${barCenter.y - perpendicular.y * 5.5}`,
+        d: `M ${bar.x + bar.px * 5.5} ${bar.y + bar.py * 5.5} L ${bar.x - bar.px * 5.5} ${bar.y - bar.py * 5.5}`,
         class: 'erd-cardinality',
       },
       parent,
@@ -399,15 +398,12 @@ function appendCardinality(parent, anchor, inward, cardinality) {
   }
 
   if (optional) {
-    const circleCenter = {
-      x: anchor.x - inward.x * (many ? 17 : 15),
-      y: anchor.y - inward.y * (many ? 17 : 15),
-    };
+    const circle = frameAt(many ? 17 : 15);
     createElement(
       'circle',
       {
-        cx: circleCenter.x,
-        cy: circleCenter.y,
+        cx: circle.x,
+        cy: circle.y,
         r: 3.4,
         class: 'erd-cardinality-circle',
       },
@@ -925,14 +921,14 @@ function renderDiagram(svg, layout, relations, onNodeHover) {
 
     appendCardinality(
       edgeGroup,
-      geometry.start,
-      normalize(geometry.startInward),
+      geometry,
+      'start',
       relation.sourceCard,
     );
     appendCardinality(
       edgeGroup,
-      geometry.end,
-      normalize(geometry.endInward),
+      geometry,
+      'end',
       relation.targetCard,
     );
     edgeGroups.push(edgeGroup);
