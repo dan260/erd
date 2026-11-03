@@ -859,6 +859,7 @@ html.no-js .source-editor {
   align-items: center;
   gap: 6px;
   position: relative;
+  z-index: 2;
 }
 
 .zoom-toolbar {
