@@ -35,6 +35,85 @@ entity Post {
   assert.equal(result.entities[1].closeLine, 12);
 });
 
+test('treats the entity keyword as optional', () => {
+  const result = parseSchema(`User {
+  id: int
+  name
+  posts: Post[1:n]
+}
+
+Post {
+  id: int
+  title: string
+  author: User[n:1]
+}`);
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.entities.map((entity) => entity.name),
+    ['User', 'Post'],
+  );
+  assert.deepEqual(
+    result.entities[0].fields.map((field) => [field.name, field.type]),
+    [
+      ['id', 'int'],
+      ['name', ''],
+      ['posts', 'Post[1:n]'],
+    ],
+  );
+  assert.equal(result.entities[0].line, 1);
+  assert.equal(result.entities[0].closeLine, 5);
+  assert.equal(result.relations.length, 1);
+});
+
+test('mixes keyword and keyword-less entities', () => {
+  const result = parseSchema(`entity User {
+  id: int
+}
+
+Post {
+  id: int
+  author: User[n:1]
+}`);
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.entities.map((entity) => entity.name),
+    ['User', 'Post'],
+  );
+});
+
+test('parses a keyword-less empty entity and empty entity with the keyword', () => {
+  const result = parseSchema(`Empty {}
+entity Filled {}
+Solo {}`);
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.entities.map((entity) => entity.name),
+    ['Empty', 'Filled', 'Solo'],
+  );
+});
+
+test('parses an entity whose name is the word entity', () => {
+  const result = parseSchema(`entity {
+  id: int
+}`);
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.entities.map((entity) => entity.name),
+    ['entity'],
+  );
+});
+
+test('does not swallow a name that merely starts with entity', () => {
+  const result = parseSchema(`entityUser {
+  id: int
+}`);
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.entities.map((entity) => entity.name),
+    ['entityUser'],
+  );
+});
+
 test('merges reciprocal explicit relationships', () => {
   const result = parseSchema(`entity User {
   id: int
@@ -43,6 +122,7 @@ test('merges reciprocal explicit relationships', () => {
 
 entity Post {
   id: int
+  title: string
   author: User[n:1]
 }`);
   assert.equal(result.errors.length, 0);
@@ -149,6 +229,17 @@ test('reports an unclosed entity', () => {
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].line, 1);
   assert.match(result.errors[0].message, /not closed/);
+});
+
+test('treats a bare keyword-less word as an attempted entity', () => {
+  const result = parseSchema(`hello`);
+  assert.match(result.errors[0].message, /opening brace/);
+});
+
+test('still reports a missing entity for a line that is not an entity', () => {
+  const result = parseSchema(`hello world`);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0].message, /declaration/);
 });
 
 test('recovers when a new entity starts before the previous one is closed', () => {

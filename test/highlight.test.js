@@ -36,6 +36,24 @@ test('a bare entity name is colored without a brace', () => {
   assert.doesNotMatch(html, /tk-brace/);
 });
 
+test('a keyword-less entity declaration marks name and brace', () => {
+  const html = highlightSchema('User {');
+  assert.doesNotMatch(html, /tk-keyword/);
+  assert.match(html, /<span class="tk-name">User<\/span> </);
+  assert.match(html, /<span class="tk-brace">\{<\/span>$/);
+});
+
+test('a keyword-less inline empty entity marks both braces', () => {
+  const html = highlightSchema('User {}');
+  const braces = [...html.matchAll(/tk-brace/g)];
+  assert.equal(braces.length, 2);
+});
+
+test('a type-less field inside a block is not mistaken for an entity', () => {
+  const html = highlightSchema('entity User {\n  name\n}');
+  assert.match(html, /<span class="tk-field">name<\/span>/);
+});
+
 test('a field with a type marks field, colon, type and cardinality', () => {
   const html = highlightSchema(
     'entity User {\n  posts: Post[1:n]\n}',
@@ -96,7 +114,9 @@ test('stray braces stay braces and do not corrupt the line', () => {
   );
   const lines = html.split('\n');
   assert.match(lines[1], /<span class="tk-brace">\}<\/span>$/);
-  assert.match(lines[2], /<span class="tk-field">x<\/span>/);
+  // After the closing brace we are back at top level, so the lone `x` is a
+  // (keyword-less) entity name, not a field.
+  assert.match(lines[2], /<span class="tk-name">x<\/span>/);
 });
 
 test('angle brackets and ampersands are escaped', () => {

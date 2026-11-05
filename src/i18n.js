@@ -88,8 +88,10 @@ const I18N = (() => {
       'help.close': 'Close',
       'help.lead':
         'The whole schema is described in text. The preview and the relations are rebuilt as you type.',
-      'help.code.entity': 'entity Name { … }',
-      'help.rule.entity': 'An entity and its fields. Each field — on a new line.',
+      'help.code.entity': 'entity Name { … }  ·  Name { … }',
+      'help.rule.entity':
+        'An entity and its fields. Each field — on a new line. ' +
+        'The “entity” keyword is optional.',
       'help.code.field': 'field',
       'help.code.fieldType': 'field: type',
       'help.rule.field':
@@ -125,7 +127,8 @@ const I18N = (() => {
       'errors.one': '{count} error',
       'errors.other': '{count} errors',
       'diag.strayClosing': 'A closing brace without an entity declaration.',
-      'diag.missingEntity': 'Expected an “entity Name {” declaration.',
+      'diag.missingEntity':
+        'Expected an “entity Name {” or “Name {” declaration.',
       'diag.nameInvalid':
         'Entity names can only contain letters, digits and “_”.',
       'diag.duplicateEntity': 'Entity “{name}” is already declared.',
@@ -241,8 +244,10 @@ const I18N = (() => {
       'help.close': 'Закрыть',
       'help.lead':
         'Схема целиком описывается текстом. Предпросмотр и связи перестраиваются на лету.',
-      'help.code.entity': 'entity Имя { … }',
-      'help.rule.entity': 'Сущность и её поля. Каждое поле — на новой строке.',
+      'help.code.entity': 'entity Имя { … }  ·  Имя { … }',
+      'help.rule.entity':
+        'Сущность и её поля. Каждое поле — на новой строке. ' +
+        'Ключевое слово «entity» необязательно.',
       'help.code.field': 'поле',
       'help.code.fieldType': 'поле: тип',
       'help.rule.field':
@@ -281,7 +286,8 @@ const I18N = (() => {
       'errors.few': '{count} ошибки',
       'errors.many': '{count} ошибок',
       'diag.strayClosing': 'Закрывающая скобка без объявления entity.',
-      'diag.missingEntity': 'Ожидалось объявление «entity Имя {».',
+      'diag.missingEntity':
+        'Ожидалось объявление «entity Имя {» или просто «Имя {».',
       'diag.nameInvalid': 'Имя сущности может содержать только буквы, цифры и «_».',
       'diag.duplicateEntity': 'Сущность «{name}» уже объявлена.',
       'diag.missingBrace': 'После имени сущности нужна открывающая скобка «{».',

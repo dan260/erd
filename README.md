@@ -91,7 +91,8 @@ entity Post {
 }
 ```
 
-- `entity Name { ... }` — an entity and its fields, one per line.
+- `entity Name { ... }` — an entity and its fields, one per line. The
+  `entity` keyword is optional: `Name { ... }` works too.
 - `field` — a field without a type.
 - `field: type` — a field with a type.
 - If a type matches an entity name, the field is a reference to it.

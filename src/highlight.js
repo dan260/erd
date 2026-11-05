@@ -62,14 +62,46 @@ function renderType(raw) {
   return html;
 }
 
+const ENTITY_KEYWORD = /^entity(?=[\s]|$)/u;
+// Mirror the parser's three entity-open shapes (keyword optional) so the
+// highlighter routes `Name {`, `Name {}` and `Name` exactly where it routes
+// their `entity …` forms.
+const ENTITY_OPEN_LINE = /^(?:entity\s+)?[^\s{}]+\s*\{$/u;
+const ENTITY_EMPTY_LINE = /^(?:entity\s+)?[^\s{}]+\s*\{\s*\}\s*$/u;
+const ENTITY_BARE_LINE = /^(?:entity\s+)?[^\s{}]+\s*$/u;
+
+// A line is an entity declaration if it carries the `entity` keyword, or —
+// when we are not already inside a block — one of the keyword-less shapes.
+// Inside a block the same shapes are just (type-less) fields.
+function isEntityDeclaration(rest, inside) {
+  if (ENTITY_KEYWORD.test(rest)) return true;
+  if (inside) return false;
+  return (
+    ENTITY_OPEN_LINE.test(rest) ||
+    ENTITY_EMPTY_LINE.test(rest) ||
+    ENTITY_BARE_LINE.test(rest)
+  );
+}
+
+// Splits `rest` into its optional `entity` keyword and the remainder that
+// holds the name/braces. The keyword is optional in the grammar. Only the
+// word itself is consumed so the separating whitespace stays in `body` and is
+// reproduced verbatim after the keyword token.
+function splitEntityPrefix(rest) {
+  if (!ENTITY_KEYWORD.test(rest)) return { keyword: '', body: rest };
+
+  return { keyword: 'entity', body: rest.slice('entity'.length) };
+}
+
 function renderEntityLine(rest) {
-  const body = rest.slice('entity'.length);
-  const nameMatch = body.match(/^(\s*)([^\s{}]*)/u);
+  const prefix = splitEntityPrefix(rest);
+  const nameMatch = prefix.body.match(/^(\s*)([^\s{}]*)/u);
   const gap = nameMatch ? nameMatch[1] : '';
   const name = nameMatch ? nameMatch[2] : '';
-  const tail = body.slice(gap.length + name.length);
+  const tail = prefix.body.slice(gap.length + name.length);
 
-  let html = token('keyword', 'entity') + escapeHtmlText(gap);
+  let html = prefix.keyword ? token('keyword', prefix.keyword) : '';
+  html += escapeHtmlText(gap);
   if (name) html += token('name', name);
 
   let index = 0;
@@ -188,7 +220,7 @@ function highlightLine(raw, state) {
     };
   }
 
-  if (/^entity(?=[\s]|$)/u.test(rest)) {
+  if (isEntityDeclaration(rest, state)) {
     const rendered = renderEntityLine(rest);
     return { html: html + rendered.html, state: rendered.state };
   }

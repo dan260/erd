@@ -1,9 +1,12 @@
 'use strict';
 
 const IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
-const ENTITY_OPEN = /^entity\s+([^\s{}]+)\s*\{$/u;
-const ENTITY_EMPTY = /^entity\s+([^\s{}]+)\s*\{\s*\}\s*$/u;
-const ENTITY_BARE = /^entity\s+([^\s{}]+)\s*$/u;
+// The `entity` keyword is optional: both `entity Person {` and `Person {`
+// open an entity. The prefix is non-capturing and must be followed by a space
+// or line end, so a name like `entityX` is never swallowed.
+const ENTITY_OPEN = /^(?:entity\s+)?([^\s{}]+)\s*\{$/u;
+const ENTITY_EMPTY = /^(?:entity\s+)?([^\s{}]+)\s*\{\s*\}\s*$/u;
+const ENTITY_BARE = /^(?:entity\s+)?([^\s{}]+)\s*$/u;
 const RELATION_LINE = /^rel(?:\s|$)/u;
 
 function cleanType(type) {
