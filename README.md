@@ -19,6 +19,8 @@ editable `.drawio` format, or saved as a `.png` image.
   without a field.
 - Export to `.drawio` (draw.io / diagrams.net) or to `.png`.
 - Save the schema to a file and load it from a file (`.erdraft`).
+- Import tables from a SQL file: `CREATE TABLE` statements are compiled
+  into an editable schema, with the relations inferred from foreign keys.
 - Autosaving of the text in `localStorage`.
 - Zoom, panning, and automatic fitting of the diagram.
 - English and Russian interfaces (English by default).
@@ -203,6 +205,22 @@ Loaded content goes through the same pipeline as typed text: it is
 parsed, validated, and autosaved. Files larger than 1 MB or with
 binary content are rejected with a notification.
 
+### Importing a database from SQL
+
+The **SQL** button next to *Open* accepts a `.sql` file. Its `CREATE TABLE`
+and `ALTER TABLE` statements are compiled into schema text and loaded into
+the editor, which then builds the diagram and autosaves it like any other
+schema — so the result is fully editable. Tables become entities, columns
+become fields, and foreign keys (column- or table-level, inline or declared
+out of band with `ALTER TABLE … ADD CONSTRAINT`) become relations; `PRIMARY
+KEY` and `UNIQUE` constraints — wherever they are declared — set the
+cardinality. A nullable reference to a key is `1?`, a plain (non-key)
+column is `n` / `n?`. References to tables that are not in the file are
+dropped. Long types such as `character varying(15)` widen the card instead
+of being clipped. The dialect is intentionally loose (Postgres / MySQL /
+SQLite style DDL); data statements such as `INSERT` and `SELECT` are
+ignored.
+
 ## Diagram controls
 
 - Mouse wheel — zoom.
@@ -235,6 +253,7 @@ styles.css          styling
 src/app.js          application state and interactions
 src/i18n.js         interface strings (en/ru)
 src/parser.js       text schema parser
+src/sql.js          SQL `CREATE TABLE` → text compiler
 src/layout.js       automatic layout
 src/render.js       SVG rendering
 src/drawio.js       .drawio generation

@@ -75,6 +75,7 @@ const languageSelect = document.querySelector('#languageSelect');
 const themeSelect = document.querySelector('#themeSelect');
 const saveFileButton = document.querySelector('#saveFileButton');
 const openFileButton = document.querySelector('#openFileButton');
+const importSQLButton = document.querySelector('#importSQLButton');
 const settingsButton = document.querySelector('#settingsButton');
 const settingsPopover = document.querySelector('#settingsPopover');
 
@@ -87,6 +88,12 @@ fileInput.type = 'file';
 fileInput.accept = '.erdraft,.txt,text/plain';
 fileInput.hidden = true;
 document.body.appendChild(fileInput);
+
+const sqlInput = document.createElement('input');
+sqlInput.type = 'file';
+sqlInput.accept = '.sql,text/plain';
+sqlInput.hidden = true;
+document.body.appendChild(sqlInput);
 
 let currentDiagram = null;
 let view = null;
@@ -643,6 +650,54 @@ function handleFileSelected() {
     .finally(reset);
 }
 
+function handleImportSQL() {
+  sqlInput.value = '';
+  sqlInput.click();
+}
+
+function handleSQLFileSelected() {
+  const file = sqlInput.files && sqlInput.files[0];
+  if (!file) return;
+
+  const reset = () => {
+    sqlInput.value = '';
+  };
+
+  if (file.size > MAX_FILE_SIZE) {
+    showToast(I18N.t('file.tooLarge'));
+    reset();
+    return;
+  }
+
+  file
+    .text()
+    .then((text) => {
+      if (text.includes('\u0000')) {
+        showToast(I18N.t('file.loadError'));
+        return;
+      }
+
+      // Compile the DDL into ERDraft. The resulting text is what the editor
+      // holds: edit it like any other schema and keep the generated relations.
+      const schema = sqlToErdraft(text);
+      if (!schema) {
+        showToast(I18N.t('file.noSQL'));
+        return;
+      }
+
+      source.value = schema;
+      source.scrollTop = 0;
+      source.focus();
+      source.setSelectionRange(0, 0);
+      source.dispatchEvent(new Event('input', { bubbles: true }));
+      showToast(I18N.t('file.imported', { name: file.name }));
+    })
+    .catch(() => {
+      showToast(I18N.t('file.loadError'));
+    })
+    .finally(reset);
+}
+
 function handlePointerDown(event) {
   if (event.button !== 0) return;
   if (!event.target.closest('.diagram-svg')) return;
@@ -862,6 +917,8 @@ exampleButton.addEventListener('click', handleExample);
 saveFileButton.addEventListener('click', handleSaveFile);
 openFileButton.addEventListener('click', handleOpenFile);
 fileInput.addEventListener('change', handleFileSelected);
+importSQLButton.addEventListener('click', handleImportSQL);
+sqlInput.addEventListener('change', handleSQLFileSelected);
 zoomInButton.addEventListener('click', () => zoomBy(1.2));
 zoomOutButton.addEventListener('click', () => zoomBy(1 / 1.2));
 fitButton.addEventListener('click', fitView);
