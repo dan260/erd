@@ -78,6 +78,8 @@ const openFileButton = document.querySelector('#openFileButton');
 const importSQLButton = document.querySelector('#importSQLButton');
 const settingsButton = document.querySelector('#settingsButton');
 const settingsPopover = document.querySelector('#settingsPopover');
+const diagramPanel = document.querySelector('.diagram-panel');
+const fullscreenButton = document.querySelector('#fullscreenButton');
 
 const SCHEMA_FILENAME = 'erdraft-schema.erdraft';
 const MAX_FILE_SIZE = 1_000_000;
@@ -988,6 +990,75 @@ document.addEventListener('click', () => {
     settingsButton.setAttribute('aria-expanded', 'false');
   }
 });
+
+const supportsFullscreen =
+  Boolean(diagramPanel) &&
+  ('requestFullscreen' in diagramPanel ||
+    'webkitRequestFullscreen' in diagramPanel);
+
+function isFullscreen() {
+  return Boolean(
+    document.fullscreenElement || document.webkitFullscreenElement,
+  );
+}
+
+function syncFullscreenUI() {
+  if (!fullscreenButton) return;
+
+  const active = isFullscreen();
+  fullscreenButton.classList.toggle('is-fullscreen', active);
+  fullscreenButton.setAttribute('aria-pressed', String(active));
+
+  const key = active ? 'diagram.fullscreen.exit' : 'diagram.fullscreen.enter';
+  fullscreenButton.dataset.i18nTitle = key;
+  fullscreenButton.dataset.i18nAria = key;
+  fullscreenButton.title = I18N.t(key);
+  fullscreenButton.setAttribute('aria-label', I18N.t(key));
+}
+
+function enterFullscreen() {
+  if (!diagramPanel) return;
+  if ('requestFullscreen' in diagramPanel) {
+    const request = diagramPanel.requestFullscreen();
+    if (request && typeof request.catch === 'function') {
+      request.catch(() => syncFullscreenUI());
+    }
+  } else if ('webkitRequestFullscreen' in diagramPanel) {
+    diagramPanel.webkitRequestFullscreen();
+  }
+}
+
+function exitFullscreen() {
+  if (document.exitFullscreen) {
+    document.exitFullscreen();
+  } else if (document.webkitExitFullscreen) {
+    document.webkitExitFullscreen();
+  }
+}
+
+function toggleFullscreen() {
+  if (isFullscreen()) exitFullscreen();
+  else enterFullscreen();
+}
+
+function handleFullscreenChange() {
+  syncFullscreenUI();
+  // Re-fit on the frame after the transition so the diagram fills the new
+  // canvas on the way in and re-scales back down when returning to the panel.
+  if (currentDiagram) autoFit = true;
+  window.requestAnimationFrame(() => {
+    if (currentDiagram) fitView();
+  });
+}
+
+if (!supportsFullscreen) {
+  if (fullscreenButton) fullscreenButton.style.display = 'none';
+} else {
+  fullscreenButton.addEventListener('click', toggleFullscreen);
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  syncFullscreenUI();
+}
 
 const resizeObserver = new ResizeObserver(() => {
   if (autoFit && currentDiagram) fitView();

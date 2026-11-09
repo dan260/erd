@@ -456,6 +456,20 @@ a {
   background: var(--canvas);
 }
 
+/* The preview card promoted to full-screen: fill the whole screen, drop the
+   card treatment so it reads as a standalone canvas, and let the toolbar stay
+   on top while the viewport takes the rest. */
+.diagram-panel:fullscreen,
+.diagram-panel:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .panel-head {
   display: flex;
   flex: 0 0 auto;
@@ -994,6 +1008,24 @@ html.no-js .source-editor {
   color: var(--ink);
   background: var(--panel-bright);
   box-shadow: 0 1px 2px rgb(34 37 43 / 10%);
+}
+
+/* Full-screen button shows an expand glyph at rest and a collapse glyph while
+   the preview is in the full-screen state. */
+#fullscreenButton .fs-icon-enter {
+  display: block;
+}
+
+#fullscreenButton .fs-icon-exit {
+  display: none;
+}
+
+#fullscreenButton.is-fullscreen .fs-icon-enter {
+  display: none;
+}
+
+#fullscreenButton.is-fullscreen .fs-icon-exit {
+  display: block;
 }
 
 .diagram-viewport {
