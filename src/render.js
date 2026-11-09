@@ -10,7 +10,16 @@ const FONT_FIELD = `500 13px ${UI_FONT}`;
 const FONT_TYPE = `500 11.5px ${MONO_FONT}`;
 const FONT_LABEL = `500 11px ${UI_FONT}`;
 const MIN_WIDTH = 226;
-const MAX_WIDTH = 366;
+const MAX_WIDTH = 448;
+// Keep-out band around each card used when routing edges, so a line that would
+// graze a card's corner or edge is nudged clear of it rather than touching it.
+const ROUTE_MARGIN = 6;
+// Small perpendicular lead-in used by the orthogonal "channel" route: a short
+// 90° stub plus this gap makes unmistakably clear which side of a card a
+// relationship attaches to and which way it runs, instead of a slanted line
+// running along/into the card edge. (Regular Bézier relations are left to touch
+// the card directly; this only applies to channel routes.)
+const FACE_STUB = 16;
 
 let measurementContext = null;
 
@@ -186,7 +195,381 @@ function routeSides(relation, nodeMap) {
   };
 }
 
-function edgeGeometry(relation, nodeMap, route, startOffset, endOffset) {
+// The two Bézier control points for an edge, with an optional perpendicular
+// "bow". A bow of 0 is the plain S-curve; a non-zero bow pushes the belly of the
+// curve sideways into the open channel to route around any cards it would
+// otherwise cross.
+function curveControls(
+  start,
+  end,
+  horizontal,
+  sourceSide,
+  targetSide,
+  bow,
+) {
+  const gap = horizontal
+    ? Math.abs(end.x - start.x)
+    : Math.abs(end.y - start.y);
+  const curve = Math.max(32, Math.min(165, gap * 0.46));
+  if (horizontal) {
+    return {
+      controlA: {
+        x: start.x + (sourceSide === 'right' ? curve : -curve),
+        y: start.y + bow,
+      },
+      controlB: {
+        x: end.x + (targetSide === 'left' ? -curve : curve),
+        y: end.y + bow,
+      },
+    };
+  }
+  return {
+    controlA: {
+      x: start.x + bow,
+      y: start.y + (sourceSide === 'bottom' ? curve : -curve),
+    },
+    controlB: {
+      x: end.x + bow,
+      y: end.y + (targetSide === 'top' ? -curve : curve),
+    },
+  };
+}
+
+// A path sampler: given a geometry that may be a Bézier (start/controlA/
+// controlB/end) or an orthogonal polyline (with a `sample` method), return a
+// point for a parameter t in [0,1]. Polyline geometries carry their own
+// arc-length-normalized sample(); Bézier geometries fall back to the cubic.
+function pointAt(geometry, t) {
+  if (geometry.sample) return geometry.sample(t);
+  return cubicPoint(
+    geometry.start,
+    geometry.controlA,
+    geometry.controlB,
+    geometry.end,
+    t,
+  );
+}
+
+// Count how many sampled points of the edge fall inside (or within ROUTE_MARGIN
+// of) any other card — everything except the two it connects. 0 means the edge is
+// fully clear of every entity. Cards that do not overlap the curve's own box (or
+// its margin) are skipped up front, so the test scales with nearby cards only.
+// Counting (rather than a boolean) lets route resolution pick the *least*
+// overlapping detour: a full row of wide cards can box the line in, so the best
+// move may be to loop out to the open side rather than a tight squeeze.
+// Works for both Bézier and polyline geometries via pointAt().
+function measureOverlap(geometry, cards, excluded) {
+  if (cards.length === 0) return 0;
+
+  const probe = [];
+  for (let i = 0; i <= 8; i += 1) probe.push(pointAt(geometry, i / 8));
+  const bx0 = Math.min(...probe.map((p) => p.x));
+  const bx1 = Math.max(...probe.map((p) => p.x));
+  const by0 = Math.min(...probe.map((p) => p.y));
+  const by1 = Math.max(...probe.map((p) => p.y));
+
+  const near = [];
+  for (const card of cards) {
+    if (card.name === excluded.source || card.name === excluded.target) {
+      continue;
+    }
+    if (
+      card.x - ROUTE_MARGIN > bx1 ||
+      card.x + card.width + ROUTE_MARGIN < bx0 ||
+      card.y - ROUTE_MARGIN > by1 ||
+      card.y + card.height + ROUTE_MARGIN < by0
+    ) {
+      continue;
+    }
+    near.push(card);
+  }
+  if (near.length === 0) return 0;
+
+  let overlap = 0;
+  const SAMPLES = 24;
+  for (let i = 1; i < SAMPLES; i += 1) {
+    const point = pointAt(geometry, i / SAMPLES);
+    for (const card of near) {
+      if (
+        point.x > card.x - ROUTE_MARGIN &&
+        point.x < card.x + card.width + ROUTE_MARGIN &&
+        point.y > card.y - ROUTE_MARGIN &&
+        point.y < card.y + card.height + ROUTE_MARGIN
+      ) {
+        overlap += 1;
+        break;
+      }
+    }
+  }
+  return overlap;
+}
+
+// Total length of a polyline.
+function polylineLength(points) {
+  let length = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    length += Math.hypot(
+      points[i].x - points[i - 1].x,
+      points[i].y - points[i - 1].y,
+    );
+  }
+  return length;
+}
+
+// A point sampler over a polyline, normalized to arc length (t=0.5 is the path
+// midpoint). Lets label/cardinality placement treat a straight-channel path the
+// same as a Bézier.
+function polylineSampler(points) {
+  const segments = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const len = Math.hypot(
+      points[i].x - points[i - 1].x,
+      points[i].y - points[i - 1].y,
+    );
+    segments.push({ a: points[i - 1], b: points[i], start: total, len });
+    total += len;
+  }
+  if (total <= 0) {
+    const p = points[0] || { x: 0, y: 0 };
+    return () => ({ ...p });
+  }
+  return (t) => {
+    const d = Math.max(0, Math.min(1, t)) * total;
+    for (const seg of segments) {
+      if (seg.len <= 0) continue;
+      if (d <= seg.start + seg.len) {
+        const f = (d - seg.start) / seg.len;
+        return {
+          x: seg.a.x + f * (seg.b.x - seg.a.x),
+          y: seg.a.y + f * (seg.b.y - seg.a.y),
+        };
+      }
+    }
+    return { ...points[points.length - 1] };
+  };
+}
+
+// Build an SVG path `d` for a polyline, with the internal corners rounded by
+// `radius` so an orthogonal route reads as a smooth jog rather than sharp angles.
+function roundedPath(points, radius) {
+  if (points.length < 2) {
+    const p = points[0] || { x: 0, y: 0 };
+    return `M ${p.x} ${p.y}`;
+  }
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const prev = points[i - 1];
+    const cur = points[i];
+    const next = points[i + 1];
+    const inLen = Math.hypot(cur.x - prev.x, cur.y - prev.y) || 1;
+    const outLen = Math.hypot(next.x - cur.x, next.y - cur.y) || 1;
+    const r = Math.min(radius, inLen / 2, outLen / 2);
+    const inX = cur.x - ((cur.x - prev.x) / inLen) * r;
+    const inY = cur.y - ((cur.y - prev.y) / inLen) * r;
+    const outX = cur.x + ((next.x - cur.x) / outLen) * r;
+    const outY = cur.y + ((next.y - cur.y) / outLen) * r;
+    d += ` L ${inX} ${inY} Q ${cur.x} ${cur.y} ${outX} ${outY}`;
+  }
+  const last = points[points.length - 1];
+  d += ` L ${last.x} ${last.y}`;
+  return d;
+}
+
+// Unit vector pointing OUTWARDS from a card face (away from the card interior).
+// A line stubbed along this leaves/enters the card at 90°.
+function faceNormal(side, horizontal) {
+  if (side === 'top') return { x: 0, y: -1 };
+  if (side === 'bottom') return { x: 0, y: 1 };
+  if (side === 'left') return { x: -1, y: 0 };
+  if (side === 'right') return { x: 1, y: 0 };
+  return horizontal ? { x: 1, y: 0 } : { x: 0, y: 1 };
+}
+
+// An orthogonal "channel" route for an edge that is too obstructed for a single
+// Bézier, or that a Bézier would only reach at a slant. It leaves each card with a
+// short 90° stub + gap, then jogs into a clear slot between the cards and across
+// to the target (also a 90° stub in). Several candidate slots are tried (the gaps
+// between card edges, the two open extremes, and the near-direct line) and the one
+// that overlaps the fewest cards is used — with clean perpendicular ends throughout.
+function channelGeometry(
+  start,
+  end,
+  horizontal,
+  sourceSide,
+  targetSide,
+  cards,
+  excluded,
+) {
+  const source = { ...start };
+  const target = { ...end };
+  const others = cards.filter(
+    (c) => c.name !== excluded.source && c.name !== excluded.target,
+  );
+  const axis = horizontal ? 'y' : 'x';
+  const read = (p) => (axis === 'y' ? p.y : p.x);
+
+  // Short perpendicular stubs off each card face keep the line 90° at both ends
+  // even as the middle of the route detours.
+  const nS = faceNormal(sourceSide, horizontal);
+  const nT = faceNormal(targetSide, horizontal);
+  const stub = (p, n) => ({
+    x: p.x + n.x * FACE_STUB,
+    y: p.y + n.y * FACE_STUB,
+  });
+  const s1 = stub(source, nS);
+  const t1 = stub(target, nT);
+
+  const edges = new Set();
+  for (const card of others) {
+    if (axis === 'y') {
+      edges.add(card.y);
+      edges.add(card.y + card.height);
+    } else {
+      edges.add(card.x);
+      edges.add(card.x + card.width);
+    }
+  }
+  edges.add(read(source));
+  edges.add(read(target));
+
+  const values = [...edges].sort((a, b) => a - b);
+  const lo = values[0];
+  const hi = values[values.length - 1];
+  const candidates = new Set();
+  candidates.add(lo - 26);
+  candidates.add(hi + 26);
+  for (let i = 0; i < values.length - 1; i += 1) {
+    candidates.add((values[i] + values[i + 1]) / 2);
+  }
+  candidates.add((read(source) + read(target)) / 2);
+
+  const build = (channelCoord) => {
+    if (horizontal) {
+      return [
+        source,
+        s1,
+        { x: s1.x, y: channelCoord },
+        { x: t1.x, y: channelCoord },
+        t1,
+        target,
+      ];
+    }
+    return [
+      source,
+      s1,
+      { x: channelCoord, y: s1.y },
+      { x: channelCoord, y: t1.y },
+      t1,
+      target,
+    ];
+  };
+
+  let best = null;
+  for (const coord of candidates) {
+    const points = build(coord);
+    const sample = polylineSampler(points);
+    const overlap = measureOverlap(
+      { sample, start: source, end: target },
+      cards,
+      excluded,
+    );
+    const length = polylineLength(points);
+    if (
+      best === null ||
+      overlap < best.overlap ||
+      (overlap === best.overlap && length < best.length)
+    ) {
+      best = { points, sample, overlap, length };
+    }
+  }
+
+  return {
+    start: source,
+    end: target,
+    sample: best.sample,
+    path: roundedPath(best.points, 13),
+  };
+}
+
+// Route an edge so it never visually overlaps another entity. It measures how
+// much a candidate curve overlaps cards and grows a perpendicular "bow" (the axis
+// at right angles to the route) until the curve is clear of all of them. The
+// ladder runs from a light nudge all the way out past a full row/column of cards,
+// so a card sitting in the path is looped around rather than tucked behind it.
+// The smallest bow that is fully clear wins; if a curve can never be fully clear
+// (completely boxed in), we still apply the smallest bow that reduces the clutter,
+// and only leave it straight if nothing helps.
+function resolveBow(
+  start,
+  end,
+  horizontal,
+  sourceSide,
+  targetSide,
+  cards,
+  excluded,
+) {
+  if (cards.length === 0) return 0;
+  const probe = (bow) => {
+    const { controlA, controlB } = curveControls(
+      start,
+      end,
+      horizontal,
+      sourceSide,
+      targetSide,
+      bow,
+    );
+    return measureOverlap(
+      { start, controlA, controlB, end },
+      cards,
+      excluded,
+    );
+  };
+
+  const base = probe(0);
+  if (base === 0) return 0;
+
+  // Bow magnitudes, capped. A single Bézier can loop around one card in a modest
+  // arc, but it cannot route around an entire row/col of cards without launching
+  // a huge loop that dwarfs the diagram — so the step ladder tops out around a
+  // natural single-card loop (belly ≈ 270px). When a curve still overlaps cards
+  // after the cap, those cards simply sit behind the line (cards are opaque and
+  // painted over the edges layer) instead of forcing a giant detour.
+  let bestZero = null;
+  let bestReduction = null;
+  for (const direction of [-1, 1]) {
+    for (const magnitude of [18, 34, 58, 92, 134, 192, 262, 360]) {
+      const bow = direction * magnitude;
+      const overlap = probe(bow);
+      if (overlap === 0) {
+        if (bestZero === null || Math.abs(bow) < Math.abs(bestZero)) {
+          bestZero = bow;
+        }
+      } else if (
+        overlap < base &&
+        (bestReduction === null ||
+          overlap < bestReduction.overlap ||
+          (overlap === bestReduction.overlap &&
+            Math.abs(bow) < Math.abs(bestReduction.bow)))
+      ) {
+        bestReduction = { bow, overlap };
+      }
+    }
+  }
+
+  if (bestZero !== null) return bestZero;
+  if (bestReduction !== null) return bestReduction.bow;
+  return 0;
+}
+
+function edgeGeometry(
+  relation,
+  nodeMap,
+  route,
+  startOffset,
+  endOffset,
+  cards = [],
+) {
   const source = nodeMap.get(relation.source);
   const target = nodeMap.get(relation.target);
 
@@ -201,9 +584,6 @@ function edgeGeometry(relation, nodeMap, route, startOffset, endOffset) {
 
   let start;
   let end;
-  let controlA;
-  let controlB;
-
   if (route.horizontal) {
     start = {
       x: route.sourceSide === 'right' ? source.x + source.width : source.x,
@@ -212,17 +592,6 @@ function edgeGeometry(relation, nodeMap, route, startOffset, endOffset) {
     end = {
       x: route.targetSide === 'left' ? target.x : target.x + target.width,
       y: targetCenter.y + endOffset,
-    };
-
-    const gap = Math.abs(end.x - start.x);
-    const curve = Math.max(32, Math.min(165, gap * 0.46));
-    controlA = {
-      x: start.x + (route.sourceSide === 'right' ? curve : -curve),
-      y: start.y,
-    };
-    controlB = {
-      x: end.x + (route.targetSide === 'left' ? -curve : curve),
-      y: end.y,
     };
   } else {
     start = {
@@ -233,30 +602,70 @@ function edgeGeometry(relation, nodeMap, route, startOffset, endOffset) {
       x: targetCenter.x + endOffset,
       y: route.targetSide === 'top' ? target.y : target.y + target.height,
     };
-
-    const gap = Math.abs(end.y - start.y);
-    const curve = Math.max(32, Math.min(165, gap * 0.46));
-    controlA = {
-      x: start.x,
-      y: start.y + (route.sourceSide === 'bottom' ? curve : -curve),
-    };
-    controlB = {
-      x: end.x,
-      y: end.y + (route.targetSide === 'top' ? -curve : curve),
-    };
   }
 
-  const path = `M ${start.x} ${start.y} C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${end.x} ${end.y}`;
-  const label = cubicPoint(start, controlA, controlB, end, 0.5);
+  const excluded = { source: relation.source, target: relation.target };
+  const bow = resolveBow(
+    start,
+    end,
+    route.horizontal,
+    route.sourceSide,
+    route.targetSide,
+    cards,
+    excluded,
+  );
+  const { controlA, controlB } = curveControls(
+    start,
+    end,
+    route.horizontal,
+    route.sourceSide,
+    route.targetSide,
+    bow,
+  );
 
-  return {
-    path,
+  // A regular relation hugs the card: the curve starts/ends right on the card
+  // face (no gap), so a crow's-foot cardinality reads as attached to the entity.
+  const bezier = {
     start,
     end,
     controlA,
     controlB,
-    label,
+    label: cubicPoint(start, controlA, controlB, end, 0.5),
+    sample: (t) => cubicPoint(start, controlA, controlB, end, t),
+    path: `M ${start.x} ${start.y} C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${end.x} ${end.y}`,
   };
+  const bezierOverlap = measureOverlap(bezier, cards, excluded);
+
+  // A lightly-bowed Bézier hugs the card and is kept as-is. A heavy bow, however,
+  // loops far out and leaves the curve on a slant — it reads as "crossing" the
+  // cards even where it technically dips behind them. For those, an orthogonal
+  // channel is far cleaner: 90° in and out, routed by a clear slot, any overlap an
+  // edge has there is hidden behind the cards it passes under.
+  if (Math.abs(bow) > 40) {
+    return channelGeometry(
+      start,
+      end,
+      route.horizontal,
+      route.sourceSide,
+      route.targetSide,
+      cards,
+      excluded,
+    );
+  }
+  if (bezierOverlap > 0) {
+    const channel = channelGeometry(
+      start,
+      end,
+      route.horizontal,
+      route.sourceSide,
+      route.targetSide,
+      cards,
+      excluded,
+    );
+    if (measureOverlap(channel, cards, excluded) < bezierOverlap) return channel;
+  }
+
+  return bezier;
 }
 
 function selfLoopGeometry(relation, node, index, count, side) {
@@ -308,11 +717,11 @@ function selfLoopGeometry(relation, node, index, count, side) {
     controlA,
     controlB,
     label,
+    sample: (t) => cubicPoint(start, controlA, controlB, end, t),
   };
 }
-
 function cardBounds(node) {
-  return { x: node.x, y: node.y, width: node.width, height: node.height };
+  return { name: node.name, x: node.x, y: node.y, width: node.width, height: node.height };
 }
 
 function rectIntersects(a, b) {
@@ -363,13 +772,7 @@ function positionLabelAlongCurve(geometry, size, cards) {
   const margin = 4;
 
   const evaluate = (t) => {
-    const point = cubicPoint(
-      geometry.start,
-      geometry.controlA,
-      geometry.controlB,
-      geometry.end,
-      t,
-    );
+    const point = pointAt(geometry, t);
     return {
       point,
       t,
@@ -439,16 +842,11 @@ function appendCardinality(parent, geometry, from, cardinality) {
   const optional =
     cardinality === 'zeroOne' || cardinality === 'zeroMany';
 
-  const start = geometry.start;
-  const controlA = geometry.controlA;
-  const controlB = geometry.controlB;
-  const end = geometry.end;
-
   const SAMPLES = 64;
   const points = new Array(SAMPLES + 1);
   for (let i = 0; i <= SAMPLES; i++) {
     const t = from === 'start' ? i / SAMPLES : 1 - i / SAMPLES;
-    points[i] = cubicPoint(start, controlA, controlB, end, t);
+    points[i] = pointAt(geometry, t);
   }
 
   const cumulative = new Array(SAMPLES + 1).fill(0);
@@ -648,19 +1046,35 @@ function renderEntities(parent, nodes, svgName) {
         typeText = `${field.reference ? '→ ' : ''}${field.type}`;
       }
 
-      const typeMaxWidth = Math.floor(node.width * 0.46);
+      const inner = node.width - 30; // 16px left + 14px right padding
+      const gap = typeText ? 14 : 0;
+      const wantType = typeText ? textWidth(typeText, FONT_TYPE) : 0;
+      const wantName = textWidth(field.name, FONT_FIELD);
+
+      // Give each side its natural width when they fit. `measureEntities` sizes
+      // the card to the widest field, so this only clips once the card is at
+      // its cap: then keep the type (the informative part) and trim the name,
+      // or trim the type only if it alone fills the row. This is what lets a
+      // long `character varying(15)` stay whole instead of being cut to fit a
+      // fixed slice of the row.
+      let giveName = wantName;
+      let giveType = wantType;
+      if (wantName + wantType + gap > inner && wantName + wantType > 0) {
+        if (wantType >= inner) {
+          giveName = Math.min(wantName, inner * 0.2);
+          giveType = Math.max(0, inner - giveName - gap);
+        } else {
+          giveName = Math.max(0, inner - wantType - gap);
+        }
+      }
+
       const displayType = typeText
-        ? truncateText(typeText, FONT_TYPE, typeMaxWidth)
+        ? truncateText(typeText, FONT_TYPE, Math.max(0, giveType))
         : '';
-      const typeWidth = displayType
-        ? textWidth(displayType, FONT_TYPE)
-        : 0;
-      const nameMaxWidth =
-        node.width - 32 - (typeWidth > 0 ? typeWidth + 14 : 0);
       const displayName = truncateText(
         field.name,
         FONT_FIELD,
-        Math.max(40, nameMaxWidth),
+        Math.max(0, giveName),
       );
 
       const nameElement = createElement(
@@ -1020,6 +1434,7 @@ function renderDiagram(svg, layout, relations) {
         routes[relationIndex],
         startOffsets[relationIndex],
         endOffsets[relationIndex],
+        cardBoundsList,
       );
     }
     const edgeGroup = createElement(
