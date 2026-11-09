@@ -20,6 +20,16 @@ const ROUTE_MARGIN = 6;
 // running along/into the card edge. (Regular Bézier relations are left to touch
 // the card directly; this only applies to channel routes.)
 const FACE_STUB = 16;
+// Lateral bow offset added per lane away from a pair's centre line. Multiple
+// relations between the same entity pair are routed on distinct lanes so the
+// curves fan apart instead of stacking on one curve (labels included).
+const BOW_LANE_SPACING = 56;
+// Wider lanes when the route runs vertically: the fan is then horizontal, the
+// same axis as (wide) labels, so it gets more room.
+const BOW_LANE_SPACING_WIDE = 76;
+// Fraction of the curve length used to stagger the labels of parallel edges
+// (in opposite directions along the curve per bow lane).
+const LABEL_T_STAGGER = 0.32;
 
 let measurementContext = null;
 
@@ -400,6 +410,7 @@ function channelGeometry(
   targetSide,
   cards,
   excluded,
+  bowLane = 0,
 ) {
   const source = { ...start };
   const target = { ...end };
@@ -444,13 +455,19 @@ function channelGeometry(
   }
   candidates.add((read(source) + read(target)) / 2);
 
+  // Parallel edges in a pair would pick the identical slot; the lane nudges the
+  // whole channel sideways so the straight runs stay on distinct bands.
+  const laneShift = bowLane * (horizontal ? BOW_LANE_SPACING : BOW_LANE_SPACING_WIDE);
+  const laneCoord = (coord) => coord + laneShift;
+
   const build = (channelCoord) => {
+    const coord = laneCoord(channelCoord);
     if (horizontal) {
       return [
         source,
         s1,
-        { x: s1.x, y: channelCoord },
-        { x: t1.x, y: channelCoord },
+        { x: s1.x, y: coord },
+        { x: t1.x, y: coord },
         t1,
         target,
       ];
@@ -458,8 +475,8 @@ function channelGeometry(
     return [
       source,
       s1,
-      { x: channelCoord, y: s1.y },
-      { x: channelCoord, y: t1.y },
+      { x: coord, y: s1.y },
+      { x: coord, y: t1.y },
       t1,
       target,
     ];
@@ -569,6 +586,7 @@ function edgeGeometry(
   startOffset,
   endOffset,
   cards = [],
+  bowLane = 0,
 ) {
   const source = nodeMap.get(relation.source);
   const target = nodeMap.get(relation.target);
@@ -605,15 +623,18 @@ function edgeGeometry(
   }
 
   const excluded = { source: relation.source, target: relation.target };
-  const bow = resolveBow(
-    start,
-    end,
-    route.horizontal,
-    route.sourceSide,
-    route.targetSide,
-    cards,
-    excluded,
-  );
+  // resolveBow clears neighbouring cards; the lane additionally fans edges that
+  // share the same entity pair so they don't stack on one curve.
+  const bow =
+    resolveBow(
+      start,
+      end,
+      route.horizontal,
+      route.sourceSide,
+      route.targetSide,
+      cards,
+      excluded,
+    ) + bowLane * (route.horizontal ? BOW_LANE_SPACING : BOW_LANE_SPACING_WIDE);
   const { controlA, controlB } = curveControls(
     start,
     end,
@@ -650,6 +671,7 @@ function edgeGeometry(
       route.targetSide,
       cards,
       excluded,
+      bowLane,
     );
   }
   if (bezierOverlap > 0) {
@@ -661,6 +683,7 @@ function edgeGeometry(
       route.targetSide,
       cards,
       excluded,
+      bowLane,
     );
     if (measureOverlap(channel, cards, excluded) < bezierOverlap) return channel;
   }
@@ -767,9 +790,16 @@ function maxClearWidth(point, maxHalfWidth, height, cards, margin) {
 // a neighbouring card (wide star edges, same-layer edges squeezed between
 // rows or columns); sampling the curve finds the spot with the most free
 // space, and the label width is clamped to fit that gap.
-function positionLabelAlongCurve(geometry, size, cards) {
+// `tBias` nudges the search centre away from the curve middle. Parallel edges
+// in a pair are already fanned sideways (bow lanes), but that is not always
+// enough room for wide labels (especially in a vertical layout, where the lane
+// axis is horizontal but the label width is not); biasing the members in
+// opposite directions along the curve gives the labels a second, larger axis
+// to spread on.
+function positionLabelAlongCurve(geometry, size, cards, tBias = 0) {
   const SPREAD = 0.28;
   const margin = 4;
+  const t0 = Math.min(0.82, Math.max(0.18, 0.5 + tBias));
 
   const evaluate = (t) => {
     const point = pointAt(geometry, t);
@@ -782,14 +812,15 @@ function positionLabelAlongCurve(geometry, size, cards) {
 
   const better = (a, b) => {
     if (a.width !== b.width) return a.width > b.width;
-    return Math.abs(a.t - 0.5) < Math.abs(b.t - 0.5);
+    return Math.abs(a.t - t0) < Math.abs(b.t - t0);
   };
 
-  let best = evaluate(0.5);
+  let best = evaluate(t0);
   if (best.width >= size.width) return best;
 
   for (let i = 1; i <= 20; i += 1) {
-    for (const t of [0.5 - SPREAD * (i / 20), 0.5 + SPREAD * (i / 20)]) {
+    for (const t of [t0 - SPREAD * (i / 20), t0 + SPREAD * (i / 20)]) {
+      if (t < 0.02 || t > 0.98) continue;
       const candidate = evaluate(t);
       if (better(candidate, best)) best = candidate;
     }
@@ -801,7 +832,10 @@ function positionLabelAlongCurve(geometry, size, cards) {
 // A self loop is drawn from one side of its card, and the label rides outside
 // the loop on that same side. When another card stands on that side, the
 // label lands on it; trying all four sides finds where the label fits and
-// moves the loop along with it.
+// moves the loop along with it. Sides are ranked first by how many external
+// edge endpoints sit on the face (a self loop swung into a busy side tangles
+// with those edges and their cards), then by the label's free width; a slightly
+// crowded side with room beats an empty side that has none.
 function positionSelfLoopLabel(
   relation,
   node,
@@ -810,6 +844,7 @@ function positionSelfLoopLabel(
   preferredSide,
   size,
   cards,
+  sideUsage,
 ) {
   const margin = 4;
   const order = [
@@ -817,8 +852,19 @@ function positionSelfLoopLabel(
     ...['right', 'left', 'bottom', 'top'].filter((s) => s !== preferredSide),
   ];
 
+  const usage = (side) => {
+    const counts = sideUsage || {};
+    return counts[side] || 0;
+  };
+  const minUsage = Math.min(
+    ...order.map((side) => usage(side)),
+  );
+  // Allow one step above the calmest side so a blocked-but-quiet face doesn't
+  // starve the label when every nearby face is taken.
+  const candidates = order.filter((side) => usage(side) <= minUsage + 1);
+
   let best = null;
-  for (const side of order) {
+  for (const side of candidates) {
     const geometry = selfLoopGeometry(relation, node, index, count, side);
     const width = maxClearWidth(
       geometry.label,
@@ -1284,6 +1330,64 @@ function renderDiagram(svg, layout, relations) {
   const routes = relations.map((relation) =>
     routeSides(relation, nodeMap),
   );
+
+  // Relations that share the same entity pair (for example a foreign key and a
+  // back-reference that disagree on cardinality) would otherwise be routed on
+  // the same curve with overlapping labels. Assign each a distinct lane so their
+  // curves fan apart and the labels land on separate bands.
+  const pairCounts = new Map();
+  for (const relation of relations) {
+    if (relation.source === relation.target) continue;
+    const key = [relation.source, relation.target].sort().join('\u0000');
+    pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
+  }
+  const pairIndexes = new Map();
+  const bowLanes = relations.map((relation) => {
+    if (relation.source === relation.target) return 0;
+    const key = [relation.source, relation.target].sort().join('\u0000');
+    const count = pairCounts.get(key) || 1;
+    if (count === 1) return 0;
+    const index = pairIndexes.get(key) || 0;
+    pairIndexes.set(key, index + 1);
+    return index - (count - 1) / 2;
+  });
+
+  // Members of a pair whose sideways fan cannot separate the labels get their
+  // labels staggered along the curve as well; the rest ride the curve middle,
+  // where the fan's separation is largest. The fan axis follows the route:
+  // vertical routes fan horizontally (the wide dimension of labels), so they
+  // need the extra spread; horizontal routes fan vertically, which already
+  // clears the label height.
+  const labelStaggers = new Array(relations.length).fill(0);
+  const pairMembers = new Map();
+  relations.forEach((relation, i) => {
+    if (relation.source === relation.target || !relation.label) return;
+    const key = [relation.source, relation.target].sort().join('\u0000');
+    if (!pairMembers.has(key)) pairMembers.set(key, []);
+    pairMembers.get(key).push(i);
+  });
+  for (const members of pairMembers.values()) {
+    if (members.length < 2) continue;
+    const horizontal = routes[members[0]].horizontal;
+    const sizeAlong = (i) => {
+      const size = labelSize(relations[i]);
+      return horizontal ? size.height : size.width;
+    };
+    let required = 0;
+    for (let i = 0; i < members.length; i += 1) {
+      const a = sizeAlong(members[i]);
+      const b =
+        i + 1 < members.length ? sizeAlong(members[i + 1]) : a;
+      required = Math.max(required, (a + b) / 2 + 16);
+    }
+    const available =
+      0.75 * (horizontal ? BOW_LANE_SPACING : BOW_LANE_SPACING_WIDE);
+    if (required <= available) continue;
+    for (const i of members) {
+      labelStaggers[i] = LABEL_T_STAGGER;
+    }
+  }
+
   const anchorGroups = new Map();
   const sideUsage = new Map();
 
@@ -1415,6 +1519,7 @@ function renderDiagram(svg, layout, relations) {
           preferred,
           labelSize(relation),
           cardBoundsList,
+          sideUsage.get(relation.source),
         );
         geometry = found.geometry;
         selfPlacement = { point: found.geometry.label, width: found.width };
@@ -1435,6 +1540,7 @@ function renderDiagram(svg, layout, relations) {
         startOffsets[relationIndex],
         endOffsets[relationIndex],
         cardBoundsList,
+        bowLanes[relationIndex],
       );
     }
     const edgeGroup = createElement(
@@ -1481,10 +1587,22 @@ function renderDiagram(svg, layout, relations) {
         point = selfPlacement.point;
         width = selfPlacement.width;
       } else {
+        // t runs from this edge's source to its target, so two opposite
+        // members of a pair measure the same physical spot at the same t.
+        // Orient the stagger spatially (flip for up/left routes) so the lane
+        // actually pushes the labels to opposite halves of the shared gap.
+        const route = routes[relationIndex];
+        const srcNode = nodeMap.get(relation.source);
+        const tgtNode = nodeMap.get(relation.target);
+        const pointsBack = route.horizontal
+          ? tgtNode.x + tgtNode.width / 2 < srcNode.x + srcNode.width / 2
+          : tgtNode.y + tgtNode.height / 2 < srcNode.y + srcNode.height / 2;
+        const tSign = pointsBack ? -1 : 1;
         const spot = positionLabelAlongCurve(
           geometry,
           labelSize(relation),
           cardBoundsList,
+          labelStaggers[relationIndex] * bowLanes[relationIndex] * tSign,
         );
         point = spot.point;
         width = spot.width;

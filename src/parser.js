@@ -189,6 +189,44 @@ function refTypeInfo(ref) {
   return ref.field ? ref.field.typeInfo : ref.typeInfo;
 }
 
+// Two refs that run in opposite directions between the same pair of entities
+// are only merged when they stay in the same *shape*: when both agree about
+// how many of each entity one of the other maps to ("one/0..1" family vs
+// "many/0..n" family on each end). When they disagree — for example
+// `department.manager: employee[n:1?]` (employee end: 0..1) and
+// `employee.department: department[n:1]` (employee end: many) — they are two
+// *separate* relationships (a pair of independent foreign keys, as in a SQL
+// schema), not one relationship seen from both ends. Merging such conflicting
+// refs would let the "many" cards silently win and collapse the edge to a
+// false many:many, so those refs are kept apart instead.
+function conflictingEndpoints(refA, refB) {
+  const infoA = refTypeInfo(refA);
+  const infoB = refTypeInfo(refB);
+  // Implicit refs (no brackets) carry only guessed defaults; an explicit
+  // declaration always wins per endpoint in createRelation, so a mix of
+  // explicit and implicit stays merged as before.
+  if (!infoA.cardinality || !infoB.cardinality) return false;
+
+  const kindA = fieldKind(infoA);
+  const kindB = fieldKind(infoB);
+  const singular = new Set(['one', 'zeroOne']);
+  const family = (card) => (singular.has(card) ? 0 : 1);
+
+  const cardFor = (ref, kind, name) =>
+    ref.entity.name === name ? kind.owner
+    : ref.target === name ? kind.target
+    : null;
+
+  for (const name of [refA.entity.name, refA.target]) {
+    const cardA = cardFor(refA, kindA, name);
+    const cardB = cardFor(refB, kindB, name);
+    if (cardA && cardB && family(cardA) !== family(cardB)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function createRelation(refs, entities) {
   const first = refs[0];
   const cards = new Map();
@@ -309,7 +347,12 @@ function buildRelations(entities) {
     const isSelf = group.key.startsWith('self:');
     const onePerDirection =
       group.refs.length === 2 && directions.size === 2;
-    const shouldMerge = !isSelf && onePerDirection;
+    // Merge only refs that agree on shape; conflicting shapes stay two
+    // relations (see conflictingEndpoints).
+    const shouldMerge =
+      !isSelf &&
+      onePerDirection &&
+      !conflictingEndpoints(group.refs[0], group.refs[1]);
 
     if (shouldMerge) {
       relations.push(createRelation(group.refs, entities));

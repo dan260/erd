@@ -137,6 +137,42 @@ entity Post {
   assert.equal(relation.fields.length, 2);
 });
 
+test('keeps conflicting reciprocal references as separate relationships', () => {
+  // `department.manager` and `employee.department` are two *different*
+  // foreign keys between the same pair: the employee end reads 0..1 on one
+  // line but many on the other, so they are not one relation seen from both
+  // ends and must not be merged (merging would collapse both ends to many ->
+  // a false n:n edge).
+  const result = parseSchema(`entity department {
+  id: int
+  manager: employee[n:1?]
+}
+
+entity employee {
+  id: int
+  department: department[n:1]
+}`);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.relations.length, 2);
+
+  const manager = result.relations.find((relation) =>
+    relation.fields.some((field) => field.name === 'manager'),
+  );
+  const department = result.relations.find((relation) =>
+    relation.fields.some((field) => field.name === 'department'),
+  );
+
+  assert.equal(manager.source, 'department');
+  assert.equal(manager.target, 'employee');
+  assert.equal(manager.sourceCard, 'many');
+  assert.equal(manager.targetCard, 'zeroOne');
+
+  assert.equal(department.source, 'employee');
+  assert.equal(department.target, 'department');
+  assert.equal(department.sourceCard, 'many');
+  assert.equal(department.targetCard, 'one');
+});
+
 test('supports optional cardinalities and self references', () => {
   const result = parseSchema(`entity User {
   id: int
