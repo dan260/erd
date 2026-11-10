@@ -856,29 +856,41 @@ function positionSelfLoopLabel(
     const counts = sideUsage || {};
     return counts[side] || 0;
   };
-  const minUsage = Math.min(
-    ...order.map((side) => usage(side)),
-  );
-  // Allow one step above the calmest side so a blocked-but-quiet face doesn't
-  // starve the label when every nearby face is taken.
-  const candidates = order.filter((side) => usage(side) <= minUsage + 1);
 
-  let best = null;
-  for (const side of candidates) {
-    const geometry = selfLoopGeometry(relation, node, index, count, side);
-    const width = maxClearWidth(
-      geometry.label,
-      size.width / 2,
-      size.height,
-      cards,
-      margin,
-    );
-    if (!best || width > best.width) {
-      best = { geometry, width };
+  // Faces are tried in calmest-first tiers. Widening to a noisier tier is
+  // allowed only while every quieter face offers zero width for the label, so
+  // a completely blocked quiet face still gets its label somewhere — but a
+  // merely-busier face never wins over a quiet one just because it has room.
+  // Room is fragile: when two edges of a pair merge into one the face loses
+  // an endpoint, drops a usage tier, and would otherwise absorb the loop.
+  const maxUsage = Math.max(...order.map((side) => usage(side)));
+
+  let quietest = null;
+  let chosen = null;
+  for (let level = 0; level <= maxUsage && !chosen; level += 1) {
+    let tierBest = null;
+    for (const side of order) {
+      if (usage(side) !== level) continue;
+      const geometry = selfLoopGeometry(relation, node, index, count, side);
+      const width = maxClearWidth(
+        geometry.label,
+        size.width / 2,
+        size.height,
+        cards,
+        margin,
+      );
+      if (!tierBest || width > tierBest.width) {
+        tierBest = { geometry, width };
+      }
     }
+    // Levels with no face are skipped, so the first non-empty tier is the
+    // calmest one and doubles as the fallback when nothing has any room.
+    if (!tierBest) continue;
+    if (!quietest) quietest = tierBest;
+    if (tierBest.width > 0) chosen = tierBest;
   }
 
-  return best;
+  return chosen || quietest;
 }
 
 function appendCardinality(parent, geometry, from, cardinality) {
