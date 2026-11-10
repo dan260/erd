@@ -31,6 +31,7 @@
     <script defer src="src/theme.js"></script>
     <script defer src="src/parser.js"></script>
     <script defer src="src/sql.js"></script>
+    <script defer src="src/sqlout.js"></script>
     <script defer src="src/layout.js"></script>
     <script defer src="src/drawio.js"></script>
     <script defer src="src/png.js"></script>
@@ -114,6 +115,14 @@
               <path d="m4.9 14.6 3.5-3.3 2.8 2.5 2.2-1.9 2.9 2.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <span class="btn-label"><span data-i18n="header.export">Export</span> <span class="export-suffix">.png</span></span>
+          </button>
+          <button class="btn btn-quiet" id="exportSqlButton" type="button" disabled>
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <ellipse cx="10" cy="5" rx="6" ry="2.5" stroke="currentColor" stroke-width="1.5" />
+              <path d="M4 5v10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V5" stroke="currentColor" stroke-width="1.5" />
+              <path d="M4 10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5" stroke="currentColor" stroke-width="1.5" />
+            </svg>
+            <span class="btn-label"><span data-i18n="header.export">Export</span> <span class="export-suffix">.sql</span></span>
           </button>
         </div>
       </header>
@@ -530,6 +539,54 @@ entity Post {
         <div class="dialog-footer">
           <span data-i18n="help.footer">Everything runs locally in your browser.</span>
           <button class="btn btn-primary" type="submit" value="close" data-i18n="help.gotIt">Got it</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="sql-dialog" id="exportSqlDialog" aria-labelledby="sqlDialogTitle">
+      <form method="dialog" class="sql-form">
+        <div class="dialog-head">
+          <div class="panel-heading">
+            <span class="eyebrow" data-i18n="sql.eyebrow">SQL</span>
+            <h2 id="sqlDialogTitle" data-i18n="sql.title">SQL schema</h2>
+          </div>
+          <button
+            class="icon-button dialog-close"
+            type="submit"
+            value="close"
+            data-i18n-aria="help.close"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="m5.5 5.5 9 9m0-9-9 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="dialog-body sql-body">
+          <p class="dialog-lead" data-i18n="sql.lead">
+            The same schema compiled to DDL. Adjust the types, keys and
+            nullability, then copy or download it.
+          </p>
+
+          <div class="sql-empty" id="sqlEmpty" hidden data-i18n="sql.noTables">
+            Nothing to compile yet — add at least one entity in the editor.
+          </div>
+
+          <div class="sql-columns" id="sqlColumnList"></div>
+
+          <div class="sql-preview-wrap">
+            <span class="sql-preview-label" data-i18n="sql.preview">Preview</span>
+            <pre class="sql-preview" id="sqlPreview"></pre>
+          </div>
+        </div>
+
+        <div class="dialog-footer sql-footer">
+          <span data-i18n="help.footer">Everything runs locally in your browser.</span>
+          <span class="sql-footer-actions">
+            <button class="btn btn-quiet" type="button" id="sqlCopyButton" data-i18n="sql.copy">Copy</button>
+            <button class="btn btn-primary" type="button" id="sqlDownloadButton" data-i18n="sql.download">Download .sql</button>
+          </span>
         </div>
       </form>
     </dialog>

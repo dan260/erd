@@ -294,6 +294,7 @@ function parseColumnConstraints(column, text, foreignKeys) {
       const next = matchToken(text, skipSpaces(text, i));
       if (next && next.text.toUpperCase() === 'KEY') {
         column.primaryKey = true;
+        column.notNull = true;
         i = next.end;
       } else break;
     } else if (upper === 'NOT') {

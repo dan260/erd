@@ -80,6 +80,13 @@ const settingsButton = document.querySelector('#settingsButton');
 const settingsPopover = document.querySelector('#settingsPopover');
 const diagramPanel = document.querySelector('.diagram-panel');
 const fullscreenButton = document.querySelector('#fullscreenButton');
+const exportSqlButton = document.querySelector('#exportSqlButton');
+const exportSqlDialog = document.querySelector('#exportSqlDialog');
+const sqlColumnList = document.querySelector('#sqlColumnList');
+const sqlEmpty = document.querySelector('#sqlEmpty');
+const sqlPreview = document.querySelector('#sqlPreview');
+const sqlCopyButton = document.querySelector('#sqlCopyButton');
+const sqlDownloadButton = document.querySelector('#sqlDownloadButton');
 
 const SCHEMA_FILENAME = 'erdraft-schema.erdraft';
 const MAX_FILE_SIZE = 1_000_000;
@@ -98,6 +105,7 @@ sqlInput.hidden = true;
 document.body.appendChild(sqlInput);
 
 let currentDiagram = null;
+let sqlModel = null;
 let view = null;
 let autoFit = true;
 let errorLines = new Set();
@@ -174,6 +182,10 @@ function applyLanguage() {
   }
   highlightSyntaxExample();
   setSaveStatus(I18N.t('editor.save.initial'), false);
+
+  if (exportSqlDialog.open && sqlModel) {
+    renderSqlDialog();
+  }
 }
 
 function highlightSyntaxExample() {
@@ -323,6 +335,12 @@ function setExportEnabled(enabled, title) {
   exportButton.title = enabled ? I18N.t('export.title.ready') : title;
   exportPngButton.disabled = !enabled;
   exportPngButton.title = enabled ? I18N.t('export.title.readyPng') : title;
+  setSqlExportEnabled(enabled, title);
+}
+
+function setSqlExportEnabled(enabled, title) {
+  exportSqlButton.disabled = !enabled;
+  exportSqlButton.title = enabled ? I18N.t('export.title.readySql') : title;
 }
 
 function renderDiagnostics(errors) {
@@ -594,6 +612,162 @@ async function handleExportPng() {
     console.warn('PNG export failed', error);
     showToast(I18N.t('toast.pngFailed'));
   }
+}
+
+function openExportSqlDialog() {
+  if (parseTimer !== null) parseAndRender();
+
+  if (!currentDiagram || exportSqlButton.disabled) {
+    showToast(I18N.t('sql.notReady'));
+    return;
+  }
+
+  sqlModel = buildSqlModel(parseSchema(source.value));
+  renderSqlDialog();
+  exportSqlDialog.showModal();
+}
+
+function refreshSqlPreview() {
+  if (!sqlModel) return;
+  sqlPreview.textContent = modelToSql(sqlModel);
+}
+
+// Rebuilds the per-column form from the live model (preserving the user's edits,
+// which are written straight onto the model columns) and refreshes the preview.
+function renderSqlDialog() {
+  if (!sqlModel) return;
+
+  const tables = sqlModel.tables.filter((table) => table.columns.length > 0);
+  sqlColumnList.replaceChildren();
+  for (const table of tables) sqlColumnList.appendChild(renderSqlTableRow(table));
+
+  const sql = modelToSql(sqlModel);
+  const shown = tables.length > 0;
+  sqlEmpty.hidden = shown;
+  sqlColumnList.hidden = !shown;
+  sqlPreview.hidden = !shown;
+  sqlPreview.textContent = sql;
+  sqlCopyButton.disabled = !shown;
+  sqlDownloadButton.disabled = !shown;
+}
+
+function renderSqlTableRow(table) {
+  const section = document.createElement('section');
+  section.className = 'sql-table';
+
+  const name = document.createElement('h3');
+  name.className = 'sql-table-name';
+  name.textContent = table.name;
+  section.appendChild(name);
+
+  const columns = document.createElement('div');
+  columns.className = 'sql-table-columns';
+  for (const column of table.columns) {
+    columns.appendChild(renderSqlColumnRow(column));
+  }
+  section.appendChild(columns);
+
+  return section;
+}
+
+function attachFlag(row, key, initial, apply) {
+  const label = document.createElement('label');
+  label.className = 'sql-col-flag';
+
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = Boolean(initial);
+  box.addEventListener('change', () => {
+    apply(box.checked);
+    refreshSqlPreview();
+  });
+
+  const text = document.createElement('span');
+  text.textContent = I18N.t(key);
+
+  label.append(box, text);
+  row.appendChild(label);
+}
+
+function renderSqlColumnRow(column) {
+  const row = document.createElement('div');
+  row.className = 'sql-column-row';
+
+  const name = document.createElement('span');
+  name.className = 'sql-col-name';
+  name.textContent = column.name;
+  row.appendChild(name);
+
+  const type = document.createElement('input');
+  type.type = 'text';
+  type.className = 'sql-col-type';
+  type.value = column.type || '';
+  type.setAttribute('aria-label', I18N.t('sql.col.type'));
+  type.addEventListener('input', () => {
+    column.type = type.value;
+    refreshSqlPreview();
+  });
+  row.appendChild(type);
+
+  const ref = document.createElement('span');
+  ref.className = 'sql-col-ref';
+  if (column.ref && column.ref.column) {
+    ref.textContent = `→ ${column.ref.table}(${column.ref.column})`;
+  } else {
+    ref.hidden = true;
+  }
+  row.appendChild(ref);
+
+  attachFlag(row, 'sql.col.pk', column.pk, (value) => (column.pk = value));
+  attachFlag(row, 'sql.col.unique', column.unique, (value) => (column.unique = value));
+  attachFlag(row, 'sql.col.notNull', column.notNull, (value) => (column.notNull = value));
+
+  return row;
+}
+
+function copyTextToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(
+      () => true,
+      () => fallbackCopy(text),
+    );
+  }
+  return Promise.resolve(fallbackCopy(text));
+}
+
+function fallbackCopy(text) {
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function handleSqlCopy() {
+  if (!sqlModel) return;
+  const sql = modelToSql(sqlModel);
+  if (!sql) return;
+  copyTextToClipboard(sql).then((copied) => {
+    showToast(I18N.t(copied ? 'sql.copied' : 'sql.copyFailed'));
+  });
+}
+
+function handleSqlDownload() {
+  if (!sqlModel) return;
+  const sql = modelToSql(sqlModel);
+  if (!sql) return;
+  const blob = new Blob([sql], { type: 'text/plain;charset=utf-8' });
+  downloadBlob(blob, 'erdraft-schema.sql');
+  showToast(I18N.t('sql.downloaded'));
 }
 
 function handleSaveFile() {
@@ -915,6 +1089,12 @@ syntaxDialog.addEventListener('click', (event) => {
 });
 exportButton.addEventListener('click', handleExport);
 exportPngButton.addEventListener('click', handleExportPng);
+exportSqlButton.addEventListener('click', openExportSqlDialog);
+sqlCopyButton.addEventListener('click', handleSqlCopy);
+sqlDownloadButton.addEventListener('click', handleSqlDownload);
+exportSqlDialog.addEventListener('click', (event) => {
+  if (event.target === exportSqlDialog) exportSqlDialog.close();
+});
 exampleButton.addEventListener('click', handleExample);
 saveFileButton.addEventListener('click', handleSaveFile);
 openFileButton.addEventListener('click', handleOpenFile);

@@ -6,7 +6,7 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
-const source = ['i18n.js', 'theme.js', 'parser.js', 'sql.js', 'layout.js', 'drawio.js', 'highlight.js', 'png.js']
+const source = ['i18n.js', 'theme.js', 'parser.js', 'sql.js', 'sqlout.js', 'layout.js', 'drawio.js', 'highlight.js', 'png.js']
   .map((name) => readFileSync(path.join(root, 'src', name), 'utf8'))
   .join('\n');
 const load = new Function(`${source}
@@ -15,6 +15,10 @@ return {
   parseSchema,
   parseTypeModifiers,
   sqlToErdraft,
+  buildSqlModel,
+  modelToSql,
+  erDraftToSql,
+  sqlType,
   layoutDiagram,
   buildDrawioFile,
   highlightSchema,
@@ -27,6 +31,10 @@ const {
   parseSchema,
   parseTypeModifiers,
   sqlToErdraft,
+  buildSqlModel,
+  modelToSql,
+  erDraftToSql,
+  sqlType,
   layoutDiagram,
   buildDrawioFile,
   highlightSchema,
@@ -39,6 +47,10 @@ export {
   parseSchema,
   parseTypeModifiers,
   sqlToErdraft,
+  buildSqlModel,
+  modelToSql,
+  erDraftToSql,
+  sqlType,
   layoutDiagram,
   buildDrawioFile,
   highlightSchema,
