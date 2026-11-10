@@ -28,7 +28,7 @@ const I18N = (() => {
       'diagram.title': 'Preview',
       'editor.aria': 'Text description of the ER diagram',
       'editor.hint':
-        'Relation: field type = entity or entity[1:n], or rel entity[1:n] (no field)',
+        'Relation: field type = entity or entity[1:n], or entity[:1] (one-sided), or rel entity[1:n] (no field)',
       'editor.save.initial': 'Local autosave',
       'editor.save.saving': 'Saving…',
       'editor.save.saved': 'Saved locally',
@@ -106,7 +106,8 @@ const I18N = (() => {
       'help.rule.reference':
         'If the type matches an entity name, the field becomes a relation.',
       'help.rule.cardinality':
-        'Explicit cardinality <code>[owner:target]</code>: <code>1</code> — one, <code>n</code> — many.',
+        'Explicit cardinality <code>[owner:target]</code>: <code>1</code> — one, <code>n</code> — many. ' +
+        'An empty owner position — <code>author: User[:1]</code> — marks only the referenced end; the other end stays open.',
       'help.rule.optional':
         '<code>?</code> adds zero: <code>1?</code> — 0 or 1, <code>n?</code> — zero to infinity.',
       'help.code.comment': '# comment',
@@ -151,7 +152,7 @@ const I18N = (() => {
         'Field “{field}” is already declared in entity “{entity}”.',
       'diag.oneCardinality': 'Specify only one explicit cardinality.',
       'diag.invalidCardinality':
-        'Cardinality must be in the form [1:1], [1:n], [n?:1] etc.',
+        'Cardinality must be in the form [1:1], [1:n], [n?:1] etc., or one-sided: [:1].',
       'diag.unbalanced':
         'Unbalanced square brackets in type “{type}”: check the “[” and “]” balance.',
       'diag.combinedLegacy':
@@ -190,7 +191,7 @@ const I18N = (() => {
       'diagram.title': 'Предпросмотр',
       'editor.aria': 'Текстовое описание ER-диаграммы',
       'editor.hint':
-        'Связь: тип поля = entity или entity[1:n], или rel entity[1:n] (без поля)',
+        'Связь: тип поля = entity или entity[1:n], или entity[:1] (односторонняя), или rel entity[1:n] (без поля)',
       'editor.save.initial': 'Локальное сохранение',
       'editor.save.saving': 'Сохраняем…',
       'editor.save.saved': 'Сохранено локально',
@@ -268,7 +269,8 @@ const I18N = (() => {
       'help.rule.reference':
         'Если тип совпадает с именем сущности, поле становится связью.',
       'help.rule.cardinality':
-        'Явная кардинальность <code>[владелец:цель]</code>: <code>1</code> — один, <code>n</code> — много.',
+        'Явная кардинальность <code>[владелец:цель]</code>: <code>1</code> — один, <code>n</code> — много. ' +
+        'Пустая позиция владельца — <code>автор: User[:1]</code> — помечает только конец у referenced-сущности, другой конец остаётся открытым.',
       'help.rule.optional':
         '<code>?</code> добавляет ноль: <code>1?</code> — 0 или 1, <code>n?</code> — от 0 до бесконечности.',
       'help.code.comment': '# комментарий',
@@ -314,7 +316,7 @@ const I18N = (() => {
         'Поле «{field}» уже объявлено в сущности «{entity}».',
       'diag.oneCardinality': 'Можно указать только одну явную кардинальность.',
       'diag.invalidCardinality':
-        'Кардинальность должна быть в формате [1:1], [1:n], [n?:1] и т. п.',
+        'Кардинальность должна быть в формате [1:1], [1:n], [n?:1] и т. п., либо односторонней: [:1].',
       'diag.unbalanced':
         'Несбалансированные скобки в типе «{type}»: проверьте баланс «[» и «]».',
       'diag.combinedLegacy':

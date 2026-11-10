@@ -447,6 +447,197 @@ entity Role {
   assert.equal(role.targetCard, 'zeroMany');
 });
 
+// One-sided cardinality: `Target[:1]` declares only the *referenced* end —
+// the owner position is empty, so the declaring end is left open (unmarked).
+test('supports one-sided cardinality on references', () => {
+  const result = parseSchema(`entity Order {
+  item: Item[:1]
+  tag: Tag[:1?]
+  kind: Kind[:n]
+  notes: Note[:n?]
+}
+
+entity Item {
+  id: int
+}
+
+entity Tag {
+  id: int
+}
+
+entity Kind {
+  id: int
+}
+
+entity Note {
+  id: int
+}`);
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.relations.length, 4);
+
+  const item = result.relations.find(
+    (relation) => relation.target === 'Item',
+  );
+  assert.equal(item.source, 'Order');
+  assert.equal(item.sourceCard, null);
+  assert.equal(item.targetCard, 'one');
+
+  const tag = result.relations.find(
+    (relation) => relation.target === 'Tag',
+  );
+  assert.equal(tag.sourceCard, null);
+  assert.equal(tag.targetCard, 'zeroOne');
+
+  const kind = result.relations.find(
+    (relation) => relation.target === 'Kind',
+  );
+  assert.equal(kind.sourceCard, null);
+  assert.equal(kind.targetCard, 'many');
+
+  const notes = result.relations.find(
+    (relation) => relation.target === 'Note',
+  );
+  assert.equal(notes.sourceCard, null);
+  assert.equal(notes.targetCard, 'zeroMany');
+});
+
+test('merges a one-sided reference with a reciprocal reference', () => {
+  // The open declaring end of the one-sided ref is filled by the card the
+  // reciprocal ref carries for that same end.
+  const result = parseSchema(`entity Post {
+  author: User[:1]
+}
+
+entity User {
+  posts: Post[1:n]
+}`);
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.relations.length, 1);
+
+  const [relation] = result.relations;
+  assert.equal(relation.source, 'Post');
+  assert.equal(relation.target, 'User');
+  assert.equal(relation.sourceCard, 'many');
+  assert.equal(relation.targetCard, 'one');
+});
+
+test('keeps a one-sided reference separate from a conflicting reciprocal', () => {
+  // The B end reads 0..1 on one line but many on the other — different
+  // shapes, so the two refs remain two relations.
+  const result = parseSchema(`entity A {
+  b: B[:n]
+}
+
+entity B {
+  c: A[1:1]
+}`);
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.relations.length, 2);
+
+  const oneSided = result.relations.find(
+    (relation) => relation.fields.some((field) => field.name === 'b'),
+  );
+  assert.equal(oneSided.sourceCard, null);
+  assert.equal(oneSided.targetCard, 'many');
+
+  const full = result.relations.find(
+    (relation) => relation.fields.some((field) => field.name === 'c'),
+  );
+  assert.equal(full.sourceCard, 'one');
+  assert.equal(full.targetCard, 'one');
+});
+
+test('lets an explicit one-sided cardinality override an implicit guess', () => {
+  // The open (explicit) end wins over the many/one default the plain ref
+  // would have guessed for that same end.
+  const result = parseSchema(`entity Post {
+  author: User[:1]
+}
+
+entity User {
+  favorite: Post
+}`);
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.relations.length, 1);
+
+  const [relation] = result.relations;
+  assert.equal(relation.source, 'Post');
+  assert.equal(relation.target, 'User');
+  assert.equal(relation.sourceCard, null);
+  assert.equal(relation.targetCard, 'one');
+});
+
+test('supports one-sided self references and relation lines', () => {
+  const result = parseSchema(`entity B {
+  rel A[:n?]
+}
+
+entity employee {
+  manager: employee[:1?]
+}
+
+entity A {
+  id: int
+}`);
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.relations.length, 2);
+
+  // The anonymous relation keeps its empty field list and reads
+  // [open : 0..n] toward A.
+  const rel = result.relations.find(
+    (relation) => relation.source === 'B' && relation.target === 'A',
+  );
+  assert.equal(rel.sourceCard, null);
+  assert.equal(rel.targetCard, 'zeroMany');
+  assert.equal(rel.label, '');
+
+  const self = result.relations.find(
+    (relation) => relation.source === 'employee',
+  );
+  assert.equal(self.target, 'employee');
+  assert.equal(self.sourceCard, null);
+  assert.equal(self.targetCard, 'zeroOne');
+});
+
+test('reports malformed one-sided cardinality', () => {
+  // A one-sided cardinality needs its token in the *first* position to be
+  // the empty owner slot; a bare `?` or a missing token is still invalid.
+  const first = parseSchema(`entity A {
+  b: B[1:]
+}
+
+entity B {
+  id: int
+}`);
+  assert.equal(first.errors.length, 1);
+  assert.match(first.errors[0].message, /cardinality/i);
+
+  const second = parseSchema(`entity A {
+  b: B[:?]
+}
+
+entity B {
+  id: int
+}`);
+  assert.equal(second.errors.length, 1);
+  assert.match(second.errors[0].message, /cardinality/i);
+
+  const third = parseSchema(`entity A {
+  b: B[:x]
+}
+
+entity B {
+  id: int
+}`);
+  assert.equal(third.errors.length, 1);
+  assert.match(third.errors[0].message, /cardinality/i);
+});
+
 test('reports old array and optional reference syntax', () => {
   const result = parseSchema(`entity User {
   id: int

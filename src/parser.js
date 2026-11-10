@@ -51,8 +51,15 @@ function parseCardinality(value) {
 
   const source = normalize(parts[0]);
   const target = normalize(parts[1]);
-  if (!source || !target) return null;
-  return { source, target };
+  if (source && target) return { source, target };
+
+  // One-sided form: `Target[:1]` — the owner position is left empty, so only
+  // the referenced end is declared; the declaring end stays open (unmarked).
+  // A missing *token* (`Target[:?]`) is still invalid, so the empty slot must
+  // be the untouched first one and the given token must actually parse.
+  if (parts[0].trim() === '' && target) return { source: null, target };
+
+  return null;
 }
 
 function parseTypeModifiers(type) {
@@ -249,10 +256,16 @@ function createRelation(refs, entities) {
 
   const source = first.entity.name;
   const target = first.target;
-  const endpointCardinality = (name) =>
-    mergeCardinality(
-      cards.get(name) || inferredCards.get(name) || ['one'],
-    );
+  const endpointCardinality = (name) => {
+    const declared = cards.get(name) || inferredCards.get(name);
+    if (!declared) return 'one';
+    const definite = declared.filter((card) => card !== null);
+    if (definite.length === 0) return null;
+    // A one-sided declaration (`Target[:1]`) leaves this end open; a
+    // counterpart ref in the same pair that gives the end a definite card
+    // fills it in instead.
+    return mergeCardinality(definite);
+  };
   const fields = refs
     .filter((ref) => ref.field)
     .map((ref) => ({

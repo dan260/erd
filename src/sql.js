@@ -629,11 +629,17 @@ function isUniqueKey(table, rawColumns) {
   );
 }
 
-// Derives the `[owner:target]` cardinality for a foreign key. `table` is the
-// declaring table, `refTable` the referenced one (possibly identical for self
-// references). The referenced end is “one” when its column is a key, “many”
-// otherwise; the referencing end is “one” when the referencing side is a key.
-// A nullable referencing side makes the referenced end allow zero.
+// Derives the cardinality for a foreign key. `table` is the declaring table,
+// `refTable` the referenced one (possibly identical for self references). The
+// referenced end is “one” when its column is a key, “many” otherwise; the
+// referencing end is “one” when the referencing side is a key. A nullable
+// referencing side makes the referenced end allow zero.
+//
+// The owner position is only written when it carries real information. A
+// foreign key only constrains the *referenced* end (“at most one”); the
+// referencing side is a genuine key only in one-to-one relations, and in the
+// usual many-to-one case its “many” is merely derived, not declared. The
+// latter is emitted one-sided (`users[:1]`): one empty owner position.
 function cardinalityFor(table, refTable, referencing, referenced) {
   let owner = 'n';
   if (referencing.length > 0) owner = isUniqueKey(table, referencing) ? '1' : 'n';
@@ -647,7 +653,7 @@ function cardinalityFor(table, refTable, referencing, referenced) {
     target = target === '1' ? '1?' : 'n?';
   }
 
-  return `${owner}:${target}`;
+  return owner === '1' ? `${owner}:${target}` : `:${target}`;
 }
 
 function resolveNameIndex(tables) {

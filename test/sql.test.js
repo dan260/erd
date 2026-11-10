@@ -34,7 +34,7 @@ CREATE TABLE posts (id INTEGER, title TEXT);`,
   );
 });
 
-test('turns a column foreign key into a reference with cardinality', () => {
+test('turns a column foreign key into a one-sided reference', () => {
   const parsed = parseSchema(
     compile(
       `CREATE TABLE users (id SERIAL PRIMARY KEY, email VARCHAR(255) UNIQUE NOT NULL);
@@ -43,13 +43,15 @@ CREATE TABLE posts (id SERIAL PRIMARY KEY, author_id INTEGER NOT NULL REFERENCES
   );
   assert.equal(parsed.errors.length, 0);
   const author = fieldOf(parsed, 'posts', 'author_id');
-  assert.equal(author.type, 'users[n:1]');
+  // The referencing column is not a key, so it is a one-sided relation: the
+  // open (unmarked) declaring end and a single referenced end.
+  assert.equal(author.type, 'users[:1]');
   assert.equal(author.reference, 'users');
 
   const relation = parsed.relations[0];
   assert.equal(relation.source, 'posts');
   assert.equal(relation.target, 'users');
-  assert.equal(relation.sourceCard, 'many');
+  assert.equal(relation.sourceCard, null);
   assert.equal(relation.targetCard, 'one');
 });
 
@@ -61,7 +63,7 @@ CREATE TABLE posts (id INTEGER, author_id INTEGER REFERENCES users(id));`,
     ),
   );
   const author = fieldOf(parsed, 'posts', 'author_id');
-  assert.equal(author.type, 'users[n:1?]');
+  assert.equal(author.type, 'users[:1?]');
 });
 
 test('a primary-key column referenced as a foreign key is a one-to-one', () => {
@@ -81,7 +83,7 @@ test('a reference to a non-unique column is a many-to-many', () => {
 CREATE TABLE posts (id INTEGER, author_id INTEGER NOT NULL REFERENCES authors(pen_name));`,
     ),
   );
-  assert.equal(fieldOf(parsed, 'posts', 'author_id').type, 'authors[n:n]');
+  assert.equal(fieldOf(parsed, 'posts', 'author_id').type, 'authors[:n]');
 });
 
 test('supports self references', () => {
@@ -94,7 +96,7 @@ test('supports self references', () => {
   const relation = parsed.relations[0];
   assert.equal(relation.source, 'employee');
   assert.equal(relation.target, 'employee');
-  assert.equal(fieldOf(parsed, 'employee', 'manager_id').type, 'employee[n:1?]');
+  assert.equal(fieldOf(parsed, 'employee', 'manager_id').type, 'employee[:1?]');
 });
 
 test('a composite foreign key becomes an anonymous relation', () => {
@@ -119,7 +121,7 @@ CREATE TABLE orders (id INTEGER, customer_id INTEGER, CONSTRAINT fk_customer FOR
     ),
   );
   assert.equal(parsed.errors.length, 0);
-  assert.equal(fieldOf(parsed, 'orders', 'customer_id').type, 'customers[n:1?]');
+  assert.equal(fieldOf(parsed, 'orders', 'customer_id').type, 'customers[:1?]');
 });
 
 test('drops references to tables that were not imported', () => {
@@ -233,7 +235,7 @@ ALTER TABLE posts ADD CONSTRAINT posts_author_fkey FOREIGN KEY (author_id) REFER
   );
   assert.equal(parsed.errors.length, 0);
   const author = fieldOf(parsed, 'posts', 'author_id');
-  assert.equal(author.type, 'users[n:1]');
+  assert.equal(author.type, 'users[:1]');
   assert.equal(author.reference, 'users');
 });
 
@@ -247,7 +249,7 @@ ALTER TABLE articles ADD CONSTRAINT articles_category_fkey FOREIGN KEY (category
     ),
   );
   // Referencing a column made unique by the ALTER is a one on the other end.
-  assert.equal(fieldOf(parsed, 'articles', 'category_slug').type, 'categories[n:1]');
+  assert.equal(fieldOf(parsed, 'articles', 'category_slug').type, 'categories[:1]');
 });
 
 test('works for an ALTER whose table is only ever referenced (no CREATE)', () => {
@@ -328,13 +330,15 @@ ALTER TABLE employee ADD CONSTRAINT employee_supervisor_fkey FOREIGN KEY (superv
   assert.equal(fieldOf(parsed, 'department', 'name').type, 'character varying(15)');
   assert.equal(fieldOf(parsed, 'employee', 'salary').type, 'numeric(10,2)');
 
-  // Out-of-band foreign keys resolved with their keys and nullability.
-  assert.equal(fieldOf(parsed, 'employee', 'department').type, 'department[n:1]');
-  assert.equal(fieldOf(parsed, 'employee', 'supervisor').type, 'employee[n:1?]');
-  assert.equal(fieldOf(parsed, 'department', 'manager').type, 'employee[n:1?]');
-  assert.equal(fieldOf(parsed, 'works_on', 'employee').type, 'employee[n:1]');
-  assert.equal(fieldOf(parsed, 'works_on', 'project').type, 'project[n:1]');
-  assert.equal(fieldOf(parsed, 'dependent', 'employee').type, 'employee[n:1]');
+  // Out-of-band foreign keys resolved with their keys and nullability. Each
+  // referencing column is a plain (non-key) column, so every edge is
+  // one-sided: only the referenced end is marked, the declaring end is open.
+  assert.equal(fieldOf(parsed, 'employee', 'department').type, 'department[:1]');
+  assert.equal(fieldOf(parsed, 'employee', 'supervisor').type, 'employee[:1?]');
+  assert.equal(fieldOf(parsed, 'department', 'manager').type, 'employee[:1?]');
+  assert.equal(fieldOf(parsed, 'works_on', 'employee').type, 'employee[:1]');
+  assert.equal(fieldOf(parsed, 'works_on', 'project').type, 'project[:1]');
+  assert.equal(fieldOf(parsed, 'dependent', 'employee').type, 'employee[:1]');
 
   // Every referenced target exists, so no dangling relations.
   const names = new Set(parsed.entities.map((entity) => entity.name));

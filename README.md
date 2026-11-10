@@ -13,6 +13,8 @@ editable `.drawio` format, or saved as a `.png` image.
 - Relations are built automatically from field types.
 - Cardinality: `1`, `n`, `1?`, `n?`.
 - Explicit cardinality syntax: `author: User[n:1]`, `posts: Post[1:n]`.
+- One-sided cardinality: `author: User[:1]` — only the referenced end is
+  marked, the other end stays open.
 - Relations described from both sides are merged.
 - Self references of an entity.
 - Anonymous relations: `rel Target[1:n]` inside an entity — a line
@@ -142,6 +144,23 @@ cardinality.
 If a field with an explicit cardinality is merged with an
 outgoing field that has none, the explicit cardinality wins.
 
+### One-sided relations
+
+Leave the owner position empty to declare only the *referenced* end:
+
+```text
+entity Post {
+  author: User[:1]    # a Post has 0..1 User; the Post end is drawn open
+}
+```
+
+The token reads as before — `[:1]`, `[:n]`, `[:1?]`, `[:n?]` — and the
+empty owner position means “no information about this end”: the edge is
+drawn without a mark there. This is exactly what a foreign key declares,
+so the SQL import emits it (see below). If the same pair is also described
+from the other side, the counterpart fills the open end and the two
+declarations merge into one edge.
+
 ### Relations from both sides
 
 ```text
@@ -180,8 +199,9 @@ entity Notification {
 }
 ```
 
-- The cardinality is required, for example `rel User[1:n]` or
-  `rel User[0..1:1]`. Without brackets the line is reported as an error.
+- The cardinality is required, for example `rel User[1:n]`,
+  `rel User[0..1:1]`, or the one-sided `rel User[:1]`. Without brackets
+  the line is reported as an error.
 - It reads `[declaring entity : target]`, like the explicit cardinality.
 - An entity may declare as many relations as needed, even to the same
   target.
@@ -215,7 +235,11 @@ become fields, and foreign keys (column- or table-level, inline or declared
 out of band with `ALTER TABLE … ADD CONSTRAINT`) become relations; `PRIMARY
 KEY` and `UNIQUE` constraints — wherever they are declared — set the
 cardinality. A nullable reference to a key is `1?`, a plain (non-key)
-column is `n` / `n?`. References to tables that are not in the file are
+column is `n` / `n?`. A foreign key whose *referencing* column is not
+itself a key is emitted one-sided — `author: users[:1]`, `[:1?]` or
+`[:n?]`: the constrained referenced end is marked, the soft referencing
+side stays open. A one-to-one key reference keeps the full `1:1` card.
+References to tables that are not in the file are
 dropped. Long types such as `character varying(15)` widen the card instead
 of being clipped. The dialect is intentionally loose (Postgres / MySQL /
 SQLite style DDL); data statements such as `INSERT` and `SELECT` are
