@@ -570,7 +570,7 @@ a {
 .line-numbers {
   flex: 0 0 auto;
   min-width: 47px;
-  padding: 16px 0;
+  padding: 16px 0 40px;
   overflow: hidden;
   color: var(--gutter-fg);
   background: var(--gutter-bg);
@@ -607,7 +607,7 @@ a {
   z-index: 0;
   position: absolute;
   inset: 0;
-  padding: 16px 18px;
+  padding: 16px 18px 40px;
   margin: 0;
   overflow: hidden;
   color: var(--syn-text);
